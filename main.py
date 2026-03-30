@@ -758,7 +758,6 @@ def export_workout_from_template_like_structure(
     serial_number: int = 1234567890,
     software_version: int = 2605,
 ):
-    from datetime import datetime, UTC
     from fit_tool.fit_file_builder import FitFileBuilder
     from fit_tool.profile import profile_type as pt
     from fit_tool.profile.messages.file_creator_message import FileCreatorMessage
@@ -773,25 +772,12 @@ def export_workout_from_template_like_structure(
     file_id.manufacturer = pt.Manufacturer.GARMIN
     file_id.garmin_product = pt.GarminProduct.CONNECT
     file_id.serial_number = serial_number
-    from datetime import datetime, UTC
-
-    FIT_EPOCH = datetime(1989, 12, 31, tzinfo=UTC)
-    # file_id.time_created = int((datetime.now(UTC) - FIT_EPOCH).total_seconds())
     builder.add(file_id)
 
     file_creator = FileCreatorMessage()
     file_creator.hardware_version = 0
     file_creator.software_version = software_version
     builder.add(file_creator)
-
-    w = WorkoutMessage()
-    w.workout_name = workout_name
-    w.sport = pt.Sport.RUNNING
-    w.sub_sport = pt.SubSport.GENERIC
-    w.capabilities = pt.WorkoutCapabilities.TCX
-    w.num_valid_steps = len(workout["steps"])
-    w.message_index = 0
-    builder.add(w)
 
     intensity_map = {
         "warmup": pt.Intensity.WARMUP,
@@ -800,35 +786,82 @@ def export_workout_from_template_like_structure(
         "steady": pt.Intensity.ACTIVE,
         "tempo": pt.Intensity.ACTIVE,
         "interval": pt.Intensity.ACTIVE,
-        "recovery": pt.Intensity.REST,
+        "recovery": pt.Intensity.RECOVERY,
     }
     hr_zone_map = {"Z1": 1, "Z2": 2, "Z3": 3, "Z4": 4, "Z5": 5}
 
-    for i, step in enumerate(workout["steps"]):
-        if step["type"] == "repeat":
-            raise ValueError("repeat blocks not implemented yet")
-
-        s = WorkoutStepMessage()
-        s.message_index = i
-        s.intensity = intensity_map.get(step["type"], pt.Intensity.ACTIVE)
-
+    def set_duration(msg, step):
         if "min" in step and step["min"] is not None:
-            s.duration_type = pt.WorkoutStepDuration.TIME
-            s.duration_time = float(step["min"] * 60.0 * 1000.0)
+            msg.duration_type = pt.WorkoutStepDuration.TIME
+            msg.duration_time = float(
+                step["min"] * 60.0 * 1000.0
+            )  # keep your working scale
         elif "km" in step and step["km"] is not None:
-            s.duration_type = pt.WorkoutStepDuration.DISTANCE
-            s.duration_distance = float(step["km"] * 100.0)
+            msg.duration_type = pt.WorkoutStepDuration.DISTANCE
+            msg.duration_distance = float(step["km"] * 100.0)  # keep your working scale
+        elif step.get("duration_type") == "hr_less_than":
+            msg.duration_type = pt.WorkoutStepDuration.HR_LESS_THAN
+            msg.duration_hr = int(step["duration_hr"])
         else:
-            s.duration_type = pt.WorkoutStepDuration.OPEN
+            msg.duration_type = pt.WorkoutStepDuration.OPEN
 
+    def set_target(msg, step):
         if step.get("target_type") == "heart_rate":
-            s.target_type = pt.WorkoutStepTarget.HEART_RATE
-            s.target_hr_zone = hr_zone_map[step["zone"]]
+            msg.target_type = pt.WorkoutStepTarget.HEART_RATE
+            msg.target_hr_zone = hr_zone_map[step["zone"]]
         else:
-            s.target_type = pt.WorkoutStepTarget.OPEN
-            s.target_value = 0
-        s.notes = "test a message"
+            msg.target_type = pt.WorkoutStepTarget.OPEN
+            msg.target_value = 0
 
+    # flatten steps Garmin-style:
+    # children first, repeat controller after children
+    flat_steps = []
+    msg_idx = 0
+
+    for step in workout["steps"]:
+        if step["type"] != "repeat":
+            s = WorkoutStepMessage()
+            s.message_index = msg_idx
+            s.intensity = intensity_map.get(step["type"], pt.Intensity.ACTIVE)
+            set_duration(s, step)
+            set_target(s, step)
+            flat_steps.append(s)
+            msg_idx += 1
+            continue
+
+        repeat_start_idx = msg_idx
+        for sub in step["steps"]:
+            t = WorkoutStepMessage()
+            t.message_index = msg_idx
+            t.intensity = intensity_map.get(sub["type"], pt.Intensity.ACTIVE)
+            set_duration(t, sub)
+            set_target(t, sub)
+            flat_steps.append(t)
+            msg_idx += 1
+
+        r = WorkoutStepMessage()
+        r.message_index = msg_idx
+        r.duration_type = pt.WorkoutStepDuration.REPEAT_UNTIL_STEPS_CMPLT
+        r.duration_step = repeat_start_idx
+        r.target_type = pt.WorkoutStepTarget.OPEN
+        r.target_repeat_steps = int(step["repeats"])
+        print(
+            "target_value =",
+            next(f.get_value(0) for f in r.fields if f.name == "target_value"),
+        )
+        flat_steps.append(r)
+        msg_idx += 1
+
+    w = WorkoutMessage()
+    w.workout_name = workout_name
+    w.sport = pt.Sport.RUNNING
+    w.sub_sport = pt.SubSport.GENERIC
+    w.capabilities = pt.WorkoutCapabilities.TCX
+    w.num_valid_steps = len(flat_steps)
+    w.message_index = 0
+    builder.add(w)
+
+    for s in flat_steps:
         builder.add(s)
 
     builder.build().to_file(filename)

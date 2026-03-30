@@ -101,3 +101,51 @@ present = [m["name"] for m in tmpl]
 print("required_ok =", all(x in present for x in required))
 print("message_order =", present)
 print("step_count =", sum(m["name"] == "workout_step" for m in tmpl))
+
+
+from fit_tool.profile.messages.workout_step_message import WorkoutStepMessage
+
+s = WorkoutStepMessage()
+for f in s.fields:
+    if "repeat" in f.name or "duration" in f.name:
+        print("name=", f.name)
+        print("attrs=", [a for a in dir(f) if not a.startswith("_")])
+        print("base_type=", getattr(getattr(f, "base_type", None), "name", None))
+        print("---")
+
+
+from fit_tool.profile import profile_type as pt
+from fit_tool.profile.messages.workout_step_message import WorkoutStepMessage
+
+r = WorkoutStepMessage()
+r.message_index = 3
+r.duration_type = pt.WorkoutStepDuration.REPEAT_UNTIL_STEPS_CMPLT
+r.duration_step = 1
+r.repeat_steps = 6
+
+for f in r.fields:
+    if "repeat" in f.name or "duration" in f.name:
+        try:
+            v = f.get_value(0)
+        except Exception as e:
+            v = repr(e)
+        print(f.name, v)
+
+
+from fit_tool.profile import profile_type as pt
+from fit_tool.profile.messages.workout_step_message import WorkoutStepMessage
+
+r = WorkoutStepMessage()
+r.message_index = 3
+r.duration_type = pt.WorkoutStepDuration.REPEAT_UNTIL_STEPS_CMPLT
+r.duration_step = 1
+
+print("has repeat_steps:", hasattr(r, "repeat_steps"))
+print("dir contains:", [x for x in dir(r) if "repeat" in x.lower()])
+
+r.repeat_steps = 6
+for f in r.fields:
+    try:
+        print(f.name, f.get_value(0))
+    except Exception:
+        pass
