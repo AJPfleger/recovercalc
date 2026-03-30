@@ -1,12 +1,3 @@
-import fitdecode
-
-# with fitdecode.FitReader("easy-python.fit") as f:
-# # with fitdecode.FitReader("Easy_Run_workout_01.fit") as f:
-#     for frame in f:
-#         if frame.frame_type == fitdecode.FIT_FRAME_DATA:
-#             print(frame.name)
-
-# pip install fitdecode
 import json
 from pathlib import Path
 import fitdecode
@@ -49,11 +40,6 @@ def dump_fit_template(fit_path: str, out_json: str | None = None):
 tmpl = dump_fit_template("Run_Workout_workout_01.fit", "garmin_workout_template.json")
 for m in tmpl:
     print(m["name"], m["fields"])
-
-# from fit_tool.fit_file import FitFile
-# ff = FitFile.from_file("Easy_Run_workout_01.fit")
-# for i, m in enumerate(ff.messages):
-#     print(i, m.name, m.get_values())
 
 
 def summarize_workout_template(messages):

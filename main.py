@@ -1,5 +1,3 @@
-# pip install fitdecode pandas numpy
-from __future__ import annotations
 from pathlib import Path
 from dataclasses import dataclass, asdict
 import math
@@ -49,228 +47,166 @@ def _trimp_from_samples(hr: np.ndarray, dt_s: np.ndarray) -> float:
     y = 0.64 * np.exp(1.92 * hrr)  # Banister male; replace if needed
     return float(np.sum((dt_s / 60.0) * hrr * y))
 
+
 # 1) parser: keep all sports, mark running separately
 @dataclass
 class ActivitySummary:
-    file:str; sport:str|None; sub_sport:str|None; is_run:bool; start_time:pd.Timestamp|None
-    duration_s:float; distance_m:float; avg_hr:float|None; gain_m:float; avg_pace_s_per_km:float|None
-    trimp:float; week:str; z1:float; z2:float; z3:float; z4:float; z5:float
+    file: str
+    sport: str | None
+    sub_sport: str | None
+    is_run: bool
+    start_time: pd.Timestamp | None
+    duration_s: float
+    distance_m: float
+    avg_hr: float | None
+    gain_m: float
+    avg_pace_s_per_km: float | None
+    trimp: float
+    week: str
+    z1: float
+    z2: float
+    z3: float
+    z4: float
+    z5: float
+
 
 def parse_activity_fit(path: str | Path) -> ActivitySummary | None:
     recs, ses = [], {}
     with fitdecode.FitReader(str(path)) as fit:
         for frame in fit:
-            if not isinstance(frame, fitdecode.FitDataMessage): continue
+            if not isinstance(frame, fitdecode.FitDataMessage):
+                continue
             vals = {f.name: f.value for f in frame.fields}
-            if frame.name == "session": ses = vals
-            elif frame.name == "record": recs.append(vals)
-    if not ses: return None
+            if frame.name == "session":
+                ses = vals
+            elif frame.name == "record":
+                recs.append(vals)
+    if not ses:
+        return None
     sport, sub_sport = ses.get("sport"), ses.get("sub_sport")
     is_run = sport == "running"
     df = pd.DataFrame(recs)
-    if "timestamp" in df: df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True, errors="coerce")
-    if "enhanced_altitude" not in df and "altitude" in df: df["enhanced_altitude"] = df["altitude"]
+    if "timestamp" in df:
+        df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True, errors="coerce")
+    if "enhanced_altitude" not in df and "altitude" in df:
+        df["enhanced_altitude"] = df["altitude"]
     duration_s = float(ses.get("total_timer_time", 0) or 0)
     distance_m = float(ses.get("total_distance", 0) or 0)
-    avg_hr = float(ses["avg_heart_rate"]) if ses.get("avg_heart_rate") is not None else None
-    start_time = pd.to_datetime(ses["start_time"], utc=True) if ses.get("start_time") is not None else (df["timestamp"].iloc[0] if "timestamp" in df and not df.empty else None)
+    avg_hr = (
+        float(ses["avg_heart_rate"]) if ses.get("avg_heart_rate") is not None else None
+    )
+    start_time = (
+        pd.to_datetime(ses["start_time"], utc=True)
+        if ses.get("start_time") is not None
+        else (df["timestamp"].iloc[0] if "timestamp" in df and not df.empty else None)
+    )
     gain_m = float(ses.get("total_ascent", 0) or 0)
     if gain_m == 0 and "enhanced_altitude" in df and len(df) > 1:
         gain_m = float(df["enhanced_altitude"].diff().clip(lower=0).sum(skipna=True))
-    avg_pace = (duration_s / (distance_m / 1000.0)) if is_run and distance_m > 0 else None
-    hr = df["heart_rate"].dropna().to_numpy(dtype=float) if "heart_rate" in df else np.array([])
+    avg_pace = (
+        (duration_s / (distance_m / 1000.0)) if is_run and distance_m > 0 else None
+    )
+    hr = (
+        df["heart_rate"].dropna().to_numpy(dtype=float)
+        if "heart_rate" in df
+        else np.array([])
+    )
     if "timestamp" in df and len(df) > 1:
-        dt_s = df["timestamp"].diff().dt.total_seconds().fillna(0).clip(lower=0, upper=30).to_numpy(dtype=float)
+        dt_s = (
+            df["timestamp"]
+            .diff()
+            .dt.total_seconds()
+            .fillna(0)
+            .clip(lower=0, upper=30)
+            .to_numpy(dtype=float)
+        )
         dt_s = dt_s[1:] if hr.size and len(dt_s) == len(df) else dt_s
-        if hr.size and len(hr) == len(df): hr = hr[1:]
+        if hr.size and len(hr) == len(df):
+            hr = hr[1:]
     else:
         dt_s = np.full(max(len(hr), 1), duration_s / max(len(hr), 1), dtype=float)
     zones = _hr_zone_frac(hr) if hr.size else {f"z{i}": 0.0 for i in range(1, 6)}
-    trimp = _trimp_from_samples(hr, dt_s[:len(hr)]) if hr.size else 0.0
-    week = (start_time.tz_convert(None) if getattr(start_time, "tzinfo", None) else start_time).to_period("W-MON").start_time.strftime("%Y-%m-%d") if start_time is not None else "unknown"
-    return ActivitySummary(str(path), sport, sub_sport, is_run, start_time, duration_s, distance_m, avg_hr, gain_m, avg_pace, trimp, week, **zones)
+    trimp = _trimp_from_samples(hr, dt_s[: len(hr)]) if hr.size else 0.0
+    week = (
+        (
+            start_time.tz_convert(None)
+            if getattr(start_time, "tzinfo", None)
+            else start_time
+        )
+        .to_period("W-MON")
+        .start_time.strftime("%Y-%m-%d")
+        if start_time is not None
+        else "unknown"
+    )
+    return ActivitySummary(
+        str(path),
+        sport,
+        sub_sport,
+        is_run,
+        start_time,
+        duration_s,
+        distance_m,
+        avg_hr,
+        gain_m,
+        avg_pace,
+        trimp,
+        week,
+        **zones,
+    )
+
 
 # 2) loader: return all activities + runs + run-weekly
 def load_history(dir_path: str | Path, history_days: int | None = None):
-    now = pd.Timestamp.now("UTC"); rows = []
+    now = pd.Timestamp.now("UTC")
+    rows = []
     for p in Path(dir_path).rglob("*.fit"):
         s = parse_activity_fit(p)
-        if s and s.start_time is not None and (history_days is None or s.start_time >= now - pd.Timedelta(days=history_days)):
+        if (
+            s
+            and s.start_time is not None
+            and (
+                history_days is None
+                or s.start_time >= now - pd.Timedelta(days=history_days)
+            )
+        ):
             rows.append(asdict(s))
     activities = pd.DataFrame(rows).sort_values("start_time").reset_index(drop=True)
     runs = activities[activities["is_run"]].copy().reset_index(drop=True)
     weekly_runs = runs.groupby("week", as_index=False).agg(
-        runs=("file","count"), distance_km=("distance_m", lambda x: x.sum()/1000.0),
-        duration_h=("duration_s", lambda x: x.sum()/3600.0), elevation_m=("gain_m","sum"),
-        trimp=("trimp","sum"), avg_hr=("avg_hr","mean"), z1=("z1","mean"), z2=("z2","mean"),
-        z3=("z3","mean"), z4=("z4","mean"), z5=("z5","mean"))
+        runs=("file", "count"),
+        distance_km=("distance_m", lambda x: x.sum() / 1000.0),
+        duration_h=("duration_s", lambda x: x.sum() / 3600.0),
+        elevation_m=("gain_m", "sum"),
+        trimp=("trimp", "sum"),
+        avg_hr=("avg_hr", "mean"),
+        z1=("z1", "mean"),
+        z2=("z2", "mean"),
+        z3=("z3", "mean"),
+        z4=("z4", "mean"),
+        z5=("z5", "mean"),
+    )
     return activities, runs, weekly_runs
-
-# def parse_run_fit(path: str | Path) -> RunSummary | None:
-#     recs, ses = [], {}
-#     with fitdecode.FitReader(str(path)) as fit:
-#         for frame in fit:
-#             if not isinstance(frame, fitdecode.FitDataMessage):
-#                 continue
-#             vals = {f.name: f.value for f in frame.fields}
-#             if frame.name == "session" and vals.get("sport") == "running":
-#                 ses = vals
-#             elif frame.name == "record":
-#                 recs.append(vals)
-#
-#     if ses.get("sport") != "running":
-#         return None
-#
-#     df = pd.DataFrame(recs)
-#     if "timestamp" in df:
-#         df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True, errors="coerce")
-#     if "enhanced_altitude" not in df and "altitude" in df:
-#         df["enhanced_altitude"] = df["altitude"]
-#     if "enhanced_speed" not in df and "speed" in df:
-#         df["enhanced_speed"] = df["speed"]
-#     duration_s = float(ses.get("total_timer_time", 0) or 0)
-#     distance_m = float(ses.get("total_distance", 0) or 0)
-#     avg_hr = (
-#         float(ses["avg_heart_rate"]) if ses.get("avg_heart_rate") is not None else None
-#     )
-#     start_time = (
-#         pd.to_datetime(ses["start_time"], utc=True)
-#         if ses.get("start_time") is not None
-#         else (df["timestamp"].iloc[0] if "timestamp" in df and not df.empty else None)
-#     )
-#     gain_m = float(ses.get("total_ascent", 0) or 0)
-#     if gain_m == 0 and "enhanced_altitude" in df and len(df) > 1:
-#         dz = df["enhanced_altitude"].diff().clip(lower=0)
-#         gain_m = float(dz.sum(skipna=True))
-#     avg_pace = (duration_s / (distance_m / 1000.0)) if distance_m > 0 else None
-#     hr = (
-#         df["heart_rate"].dropna().to_numpy(dtype=float)
-#         if "heart_rate" in df
-#         else np.array([])
-#     )
-#     if "timestamp" in df and len(df) > 1:
-#         dt_s = (
-#             df["timestamp"]
-#             .diff()
-#             .dt.total_seconds()
-#             .fillna(0)
-#             .clip(lower=0, upper=30)
-#             .to_numpy(dtype=float)
-#         )
-#         dt_s = dt_s[1:] if hr.size and dt_s.size == len(df) else dt_s
-#         if hr.size and len(hr) == len(df):
-#             hr = hr[1:]
-#     else:
-#         dt_s = np.full(max(len(hr), 1), duration_s / max(len(hr), 1), dtype=float)
-#     zones = _hr_zone_frac(hr) if hr.size else {f"z{i}": 0.0 for i in range(1, 6)}
-#     trimp = _trimp_from_samples(hr, dt_s[: len(hr)]) if hr.size else 0.0
-#     week = (
-#         (
-#             start_time.tz_convert(None)
-#             if getattr(start_time, "tzinfo", None)
-#             else start_time
-#         )
-#         .to_period("W-MON")
-#         .start_time.strftime("%Y-%m-%d")
-#         if start_time is not None
-#         else "unknown"
-#     )
-#     return RunSummary(
-    #     str(path),
-    #     start_time,
-    #     duration_s,
-    #     distance_m,
-    #     avg_hr,
-    #     gain_m,
-    #     avg_pace,
-    #     trimp,
-    #     week,
-    #     **zones,
-    # )
-
-
-# def load_last_two_months(dir_path: str | Path) -> tuple[pd.DataFrame, pd.DataFrame]:
-#     now = pd.Timestamp.now("UTC")
-#     rows = []
-#     for p in Path(dir_path).rglob("*.fit"):
-#         s = parse_run_fit(p)
-#
-#         if s and s.start_time is not None:
-#             if HISTORY_DAYS is None or s.start_time >= now - pd.Timedelta(
-#                 days=HISTORY_DAYS
-#             ):
-#                 rows.append(asdict(s))
-#
-#     runs = pd.DataFrame(rows).sort_values("start_time").reset_index(drop=True)
-#     weekly = runs.groupby("week", as_index=False).agg(
-#         runs=("file", "count"),
-#         distance_km=("distance_m", lambda x: x.sum() / 1000.0),
-#         duration_h=("duration_s", lambda x: x.sum() / 3600.0),
-#         elevation_m=("gain_m", "sum"),
-#         trimp=("trimp", "sum"),
-#         avg_hr=("avg_hr", "mean"),
-#         z1=("z1", "mean"),
-#         z2=("z2", "mean"),
-#         z3=("z3", "mean"),
-#         z4=("z4", "mean"),
-#         z5=("z5", "mean"),
-#     )
-#     return runs, weekly
-#
-#
-# # usage:
-# runs, weekly = load_last_two_months("data")
-# print(
-#     runs[
-#         ["start_time", "distance_m", "avg_pace_s_per_km", "avg_hr", "gain_m", "trimp"]
-#     ].tail()
-# )
-# print(weekly)
 
 
 # 3) fatigue from all activities, planning from runs
 def add_ctl_atl(activities: pd.DataFrame, ctl_tau: float = 42.0, atl_tau: float = 7.0):
-    df = activities.copy(); df["date"] = pd.to_datetime(df["start_time"], utc=True).dt.floor("D")
-    daily = df.groupby("date").agg(trimp=("trimp","sum"))
-    idx = pd.date_range(daily.index.min(), daily.index.max(), freq="D", tz="UTC"); daily = daily.reindex(idx, fill_value=0.0)
-    ctl = np.zeros(len(daily)); atl = np.zeros(len(daily)); init = daily["trimp"].iloc[:42].mean() if len(daily) >= 42 else daily["trimp"].mean()
-    ctl[0] = init; atl[0] = init
+    df = activities.copy()
+    df["date"] = pd.to_datetime(df["start_time"], utc=True).dt.floor("D")
+    daily = df.groupby("date").agg(trimp=("trimp", "sum"))
+    idx = pd.date_range(daily.index.min(), daily.index.max(), freq="D", tz="UTC")
+    daily = daily.reindex(idx, fill_value=0.0)
+    ctl = np.zeros(len(daily))
+    atl = np.zeros(len(daily))
+    init = (
+        daily["trimp"].iloc[:42].mean() if len(daily) >= 42 else daily["trimp"].mean()
+    )
+    ctl[0] = init
+    atl[0] = init
     for i in range(1, len(daily)):
-        ctl[i] = ctl[i-1] + (daily["trimp"].iloc[i] - ctl[i-1]) / ctl_tau
-        atl[i] = atl[i-1] + (daily["trimp"].iloc[i] - atl[i-1]) / atl_tau
+        ctl[i] = ctl[i - 1] + (daily["trimp"].iloc[i] - ctl[i - 1]) / ctl_tau
+        atl[i] = atl[i - 1] + (daily["trimp"].iloc[i] - atl[i - 1]) / atl_tau
     daily["ctl"], daily["atl"], daily["tsb"] = ctl, atl, ctl - atl
     return daily
-
-# usage:
-# activities, runs, weekly = load_history("/path/to/FIT", history_days=365)
-# daily = add_ctl_atl(activities)
-
-# def add_ctl_atl(runs, ctl_tau=42.0, atl_tau=7.0):
-#     df = runs.copy()
-#     df["date"] = pd.to_datetime(df["start_time"], utc=True).dt.floor("D")
-#
-#     daily = df.groupby("date").agg(trimp=("trimp", "sum"))
-#     idx = pd.date_range(daily.index.min(), daily.index.max(), freq="D", tz="UTC")
-#     daily = daily.reindex(idx, fill_value=0.0)
-#
-#     ctl = np.zeros(len(daily))
-#     atl = np.zeros(len(daily))
-#
-#     init = (
-#         daily["trimp"].iloc[:42].mean() if len(daily) >= 42 else daily["trimp"].mean()
-#     )
-#     ctl[0] = init
-#     atl[0] = init
-#
-#     for i in range(1, len(daily)):
-#         ctl[i] = ctl[i - 1] + (daily["trimp"].iloc[i] - ctl[i - 1]) / ctl_tau
-#         atl[i] = atl[i - 1] + (daily["trimp"].iloc[i] - atl[i - 1]) / atl_tau
-#
-#     daily["ctl"] = ctl
-#     daily["atl"] = atl
-#     daily["tsb"] = ctl - atl
-#
-#     return daily
 
 
 def plot_load(daily: pd.DataFrame):
@@ -338,10 +274,10 @@ def plot_progression(daily: pd.DataFrame, weekly: pd.DataFrame):
         plt.tight_layout()
         plt.show()
 
+
 # usage
 activities, runs, weekly = load_history("data", history_days=365)
 daily = add_ctl_atl(activities)
-# daily = add_ctl_atl(runs)
 daily, weekly = add_progression_metrics(daily, weekly)
 
 plot_load(daily)
@@ -567,11 +503,19 @@ def hr_target(zone: str):
 
 
 def build_easy_session(target_km: float, pace_min_per_km: float):
-    return {"kind":"easy","steps":[
-        {"type":"warmup","min":2,"target_type":"heart_rate","zone":"Z1"},
-        {"type":"easy","km":max(16/pace_min_per_km, target_km),"target_type":"heart_rate","zone":"Z2"},
-        {"type":"cooldown","min":2,"target_type":"heart_rate","zone":"Z1"},
-    ]}
+    return {
+        "kind": "easy",
+        "steps": [
+            {"type": "warmup", "min": 2, "target_type": "heart_rate", "zone": "Z1"},
+            {
+                "type": "easy",
+                "km": max(16 / pace_min_per_km, target_km),
+                "target_type": "heart_rate",
+                "zone": "Z2",
+            },
+            {"type": "cooldown", "min": 2, "target_type": "heart_rate", "zone": "Z1"},
+        ],
+    }
 
 
 def build_long_session(target_km: float, pace_min_per_km: float):
@@ -689,23 +633,30 @@ def schedule_week(
 
 
 def print_week(week: dict):
-    for day in ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]:
+    for day in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]:
         w = week.get(day)
-        if w is None: print(f"{day}: REST"); continue
+        if w is None:
+            print(f"{day}: REST")
+            continue
         print(f"{day}: {w['kind'].upper()}")
         total_min = 0
         for step in w["steps"]:
             if step["type"] == "repeat":
                 print(f"  REPEAT {step['repeats']}x:")
                 for sub in step["steps"]:
-                    unit = f"{sub['min']} min" if "min" in sub else f"{sub['km']:.2f} km"
+                    unit = (
+                        f"{sub['min']} min" if "min" in sub else f"{sub['km']:.2f} km"
+                    )
                     print(f"    {sub['type']:10s} {unit:>8}  {sub['zone']}")
-                    if "min" in sub: total_min += sub["min"] * step["repeats"]
+                    if "min" in sub:
+                        total_min += sub["min"] * step["repeats"]
             else:
                 unit = f"{step['min']} min" if "min" in step else f"{step['km']:.2f} km"
                 print(f"  {step['type']:10s} {unit:>8}  {step['zone']}")
-                if "min" in step: total_min += step["min"]
+                if "min" in step:
+                    total_min += step["min"]
         print(f"  TOTAL: {total_min} min\n")
+
 
 preferred_days = ["Mon", "Wed", "Fri"]  # change weekly
 pace = recent_pace_min_per_km(runs)
@@ -717,7 +668,12 @@ from fit_tool.profile.messages.workout_message import WorkoutMessage
 from fit_tool.profile.messages.workout_step_message import WorkoutStepMessage
 
 # from fit_tool.profile.messages.workout_step_message import WorkoutStepMessage
-from fit_tool.profile.profile_type import WorkoutStepDuration, WorkoutStepTarget, Intensity
+from fit_tool.profile.profile_type import (
+    WorkoutStepDuration,
+    WorkoutStepTarget,
+    Intensity,
+)
+
 # s = WorkoutStepMessage()
 
 
@@ -734,10 +690,6 @@ def export_easy(workout, filename):
         s.duration_type = WorkoutStepDuration.TIME
         s.target_type = WorkoutStepTarget.HEART_RATE
         s.intensity = Intensity.ACTIVE
-
-        # s.duration_type = "time"
-        # s.duration_value = step["min"] * 1000  # ms
-        # s.target_type = "heart_rate"
         builder.add(s)
 
     builder.build().to_file(filename)
@@ -766,6 +718,7 @@ def export_workout_from_template_like_structure(
     file_id.garmin_product = pt.GarminProduct.CONNECT
     file_id.serial_number = serial_number
     from datetime import datetime, UTC
+
     FIT_EPOCH = datetime(1989, 12, 31, tzinfo=UTC)
     # file_id.time_created = int((datetime.now(UTC) - FIT_EPOCH).total_seconds())
     builder.add(file_id)
@@ -805,7 +758,7 @@ def export_workout_from_template_like_structure(
 
         if "min" in step and step["min"] is not None:
             s.duration_type = pt.WorkoutStepDuration.TIME
-            s.duration_time = float(step["min"] * 60.0 * 1000.)
+            s.duration_time = float(step["min"] * 60.0 * 1000.0)
         elif "km" in step and step["km"] is not None:
             s.duration_type = pt.WorkoutStepDuration.DISTANCE
             s.duration_distance = float(step["km"] * 100.0)
@@ -823,6 +776,7 @@ def export_workout_from_template_like_structure(
         builder.add(s)
 
     builder.build().to_file(filename)
+
 
 # usage
 export_workout_from_template_like_structure(
