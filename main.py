@@ -585,7 +585,7 @@ def build_easy_session(target_km: float, pace_min_per_km: float):
 
 
 def build_long_session(target_km: float, pace_min_per_km: float):
-    run_km = max(5., target_km - 4.0 / pace_min_per_km)  # subtract 2' WU + 2' CD
+    run_km = max(5.0, target_km - 4.0 / pace_min_per_km)  # subtract 2' WU + 2' CD
     return {
         "kind": "long",
         "steps": [
@@ -596,61 +596,54 @@ def build_long_session(target_km: float, pace_min_per_km: float):
     }
 
 
-def build_quality_session(target_km: float, state: str = "normal"):
-    if target_km < 5.0:
-        return {
-            "kind": "steady",
-            "steps": [
-                {"type": "warmup", "min": 10, **hr_target("Z1")},
-                {"type": "steady", "min": 10, **hr_target("Z3")},
-                {"type": "cooldown", "min": 10, **hr_target("Z1")},
-            ],
-        }
+def build_quality_session(
+    target_km: float, pace_min_per_km: float, state: str = "normal"
+):
+
+    prep_km = 8.0 / pace_min_per_km
+    post_km = 8.0 / pace_min_per_km
+
     if state == "fatigued":
-        return {
-            "kind": "tempo",
-            "steps": [
-                {"type": "warmup", "min": 10, **hr_target("Z1")},
-                {
-                    "type": "repeat",
-                    "repeats": 2,
-                    "steps": [
-                        {"type": "steady", "min": 6, **hr_target("Z3")},
-                        {"type": "recovery", "min": 3, **hr_target("Z1")},
-                    ],
-                },
-                {"type": "cooldown", "min": 10, **hr_target("Z1")},
-            ],
-        }
-    if target_km < 6.5:
-        return {
-            "kind": "interval",
-            "steps": [
-                {"type": "warmup", "min": 10, **hr_target("Z1")},
-                {
-                    "type": "repeat",
-                    "repeats": 6,
-                    "steps": [
-                        {"type": "interval", "min": 2, **hr_target("Z4")},
-                        {"type": "recovery", "min": 2, **hr_target("Z1")},
-                    ],
-                },
-                {"type": "cooldown", "min": 10, **hr_target("Z1")},
-            ],
-        }
+        repeats = 2
+        on_min = 5
+        off_min = 3
+        zone = "Z3"
+    elif target_km < 6.5:
+        repeats = 6
+        on_min = 2
+        off_min = 2
+        zone = "Z4"
+    else:
+        repeats = 3
+        on_min = 6
+        off_min = 3
+        zone = "Z3"
+
     return {
-        "kind": "tempo",
+        "kind": "quality",
         "steps": [
-            {"type": "warmup", "min": 12, **hr_target("Z1")},
+            {"type": "warmup", "min": 2, "target_type": "heart_rate", "zone": "Z1"},
+            {"type": "easy", "km": prep_km, "target_type": "heart_rate", "zone": "Z2"},
             {
                 "type": "repeat",
-                "repeats": 3,
+                "repeats": repeats,
                 "steps": [
-                    {"type": "steady", "min": 6, **hr_target("Z3")},
-                    {"type": "recovery", "min": 3, **hr_target("Z1")},
+                    {
+                        "type": "interval",
+                        "min": on_min,
+                        "target_type": "heart_rate",
+                        "zone": zone,
+                    },
+                    {
+                        "type": "recovery",
+                        "min": off_min,
+                        "target_type": "heart_rate",
+                        "zone": "Z1",
+                    },
                 ],
             },
-            {"type": "cooldown", "min": 10, **hr_target("Z1")},
+            {"type": "easy", "km": post_km, "target_type": "heart_rate", "zone": "Z2"},
+            {"type": "cooldown", "min": 2, "target_type": "heart_rate", "zone": "Z1"},
         ],
     }
 
@@ -851,13 +844,17 @@ elif today_type == "EASY":
     target_km = max(3.2, targets["target_km"] / max(targets["runs"], 1))
     workout = build_easy_session(target_km=target_km, pace_min_per_km=pace)
     workout_name = "Easy Run"
-elif today_type == "LONG":
+elif (
+    today_type == "LONG" or "QUALITY"
+):  # Added Quality here. last loop attempt crashed my watch
     target_km = max(6.0, targets["target_km"] * 0.35)
     workout = build_long_session(target_km=target_km, pace_min_per_km=pace)
     workout_name = "Long Run"
 elif today_type == "QUALITY":
     target_km = max(4.0, targets["target_km"] * 0.20)
-    workout = build_quality_session(target_km=target_km, state=daily["state"].iloc[-1])
+    workout = build_quality_session(
+        target_km=target_km, pace_min_per_km=pace, state=daily["state"].iloc[-1]
+    )
     workout_name = "Quality Run"
 else:
     raise ValueError(f"unknown today_type: {today_type}")
