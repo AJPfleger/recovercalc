@@ -585,13 +585,13 @@ def build_easy_session(target_km: float, pace_min_per_km: float):
 
 
 def build_long_session(target_km: float, pace_min_per_km: float):
-    total = max(35, round(target_km * pace_min_per_km))
+    run_km = max(5., target_km - 4.0 / pace_min_per_km)  # subtract 2' WU + 2' CD
     return {
         "kind": "long",
         "steps": [
-            {"type": "warmup", "min": 5, **hr_target("Z1")},
-            {"type": "easy", "min": total - 10, **hr_target("Z2")},
-            {"type": "cooldown", "min": 5, **hr_target("Z1")},
+            {"type": "warmup", "min": 2, "target_type": "heart_rate", "zone": "Z1"},
+            {"type": "easy", "km": run_km, "target_type": "heart_rate", "zone": "Z2"},
+            {"type": "cooldown", "min": 2, "target_type": "heart_rate", "zone": "Z1"},
         ],
     }
 
@@ -733,14 +733,11 @@ from fit_tool.fit_file_builder import FitFileBuilder
 from fit_tool.profile.messages.workout_message import WorkoutMessage
 from fit_tool.profile.messages.workout_step_message import WorkoutStepMessage
 
-# from fit_tool.profile.messages.workout_step_message import WorkoutStepMessage
 from fit_tool.profile.profile_type import (
     WorkoutStepDuration,
     WorkoutStepTarget,
     Intensity,
 )
-
-# s = WorkoutStepMessage()
 
 
 def export_easy(workout, filename):
@@ -844,9 +841,33 @@ def export_workout_from_template_like_structure(
     builder.build().to_file(filename)
 
 
-# usage
+pace = 1.0 / recent_pace_km_per_min(runs)
+targets = next_week_targets(daily, weekly)
+
+if today_type == "REST":
+    print(f"REST day: TSB={daily['tsb'].iloc[-1]:.1f}, no workout exported.")
+    raise SystemExit(0)
+elif today_type == "EASY":
+    target_km = max(3.2, targets["target_km"] / max(targets["runs"], 1))
+    workout = build_easy_session(target_km=target_km, pace_min_per_km=pace)
+    workout_name = "Easy Run"
+elif today_type == "LONG":
+    target_km = max(6.0, targets["target_km"] * 0.35)
+    workout = build_long_session(target_km=target_km, pace_min_per_km=pace)
+    workout_name = "Long Run"
+elif today_type == "QUALITY":
+    target_km = max(4.0, targets["target_km"] * 0.20)
+    workout = build_quality_session(target_km=target_km, state=daily["state"].iloc[-1])
+    workout_name = "Quality Run"
+else:
+    raise ValueError(f"unknown today_type: {today_type}")
+
+print(f"today_type={today_type}, workout_name={workout_name}")
+print(workout)
+print_week({"Today": workout})
+
 export_workout_from_template_like_structure(
-    workout=week["Mon"],
-    filename="easy_template_based.fit",
-    workout_name="A Easy Run Test",
+    workout=workout,
+    filename="today.fit",
+    workout_name="recovercalc " + workout_name,
 )
