@@ -11,6 +11,7 @@ MIN_SESSION_MIN = 20.0
 MIN_SESSION_KM = 3.2
 MIN_LONG_KM = 6.0
 MIN_QUALITY_KM = 4.0
+LOCAL_TZ = "Europe/Paris"
 
 
 @dataclass
@@ -357,18 +358,22 @@ def decide_today(
     long_gap_days: int = 7,
 ):
     today = (
-        pd.Timestamp.now("UTC").floor("D")
+        pd.Timestamp.now("UTC").tz_convert(LOCAL_TZ).floor("D")
         if today is None
-        else pd.Timestamp(today, tz="UTC").floor("D")
+        else (
+            pd.Timestamp(today).tz_localize(LOCAL_TZ)
+            if pd.Timestamp(today).tzinfo is None
+            else pd.Timestamp(today).tz_convert(LOCAL_TZ).floor("D")
+        )
     )
+    run_days = (
+        pd.to_datetime(runs["start_time"], utc=True)
+        .dt.tz_convert(LOCAL_TZ)
+        .dt.floor("D")
+    )
+    last_run_day = run_days.max() if not runs.empty else None
     tsb = float(daily.loc[daily.index <= today, "tsb"].iloc[-1])
-    last_run_day = (
-        pd.to_datetime(runs["start_time"], utc=True).dt.floor("D").max()
-        if not runs.empty
-        else None
-    )
     days_since_run = 999 if pd.isna(last_run_day) else int((today - last_run_day).days)
-    run_days = pd.to_datetime(runs["start_time"], utc=True).dt.floor("D")
     run_dur = (
         runs.groupby(run_days)["duration_s"].sum()
         if not runs.empty
@@ -407,8 +412,11 @@ print("TSB:", daily["tsb"].iloc[-1])
 print(
     "days_since_last_run:",
     (
-        pd.Timestamp.now("UTC").floor("D")
-        - pd.to_datetime(runs["start_time"]).dt.floor("D").max()
+        pd.Timestamp.now("UTC").tz_convert(LOCAL_TZ).floor("D")
+        - pd.to_datetime(runs["start_time"], utc=True)
+        .dt.tz_convert(LOCAL_TZ)
+        .dt.floor("D")
+        .max()
     ).days,
 )
 print("decision:", today_type)
@@ -877,9 +885,7 @@ elif today_type == "EASY":
     target_km = max(3.2, targets["target_km"] / max(targets["runs"], 1))
     workout = build_easy_session(target_km=target_km, pace_min_per_km=pace)
     workout_name = "Easy Run"
-elif (
-    today_type == "LONG" or "QUALITY"
-):  # Added Quality here. last loop attempt crashed my watch
+elif today_type == "LONG":
     target_km = max(6.0, targets["target_km"] * 0.35)
     workout = build_long_session(target_km=target_km, pace_min_per_km=pace)
     workout_name = "Long Run"
