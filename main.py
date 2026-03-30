@@ -348,6 +348,72 @@ def next_week_targets(
     }
 
 
+def decide_today(
+    daily: pd.DataFrame,
+    runs: pd.DataFrame,
+    activities: pd.DataFrame,
+    today: pd.Timestamp | None = None,
+    quality_gap_days: int = 10,
+    long_gap_days: int = 7,
+):
+    today = (
+        pd.Timestamp.now("UTC").floor("D")
+        if today is None
+        else pd.Timestamp(today, tz="UTC").floor("D")
+    )
+    tsb = float(daily.loc[daily.index <= today, "tsb"].iloc[-1])
+    last_run_day = (
+        pd.to_datetime(runs["start_time"], utc=True).dt.floor("D").max()
+        if not runs.empty
+        else None
+    )
+    days_since_run = 999 if pd.isna(last_run_day) else int((today - last_run_day).days)
+    run_days = pd.to_datetime(runs["start_time"], utc=True).dt.floor("D")
+    run_dur = (
+        runs.groupby(run_days)["duration_s"].sum()
+        if not runs.empty
+        else pd.Series(dtype=float)
+    )
+    quality_days = (
+        run_days[run_dur.reindex(run_days).values >= 35 * 60]
+        if not runs.empty
+        else pd.Series(dtype="datetime64[ns, UTC]")
+    )
+    long_days = (
+        run_days[run_dur.reindex(run_days).values >= 60 * 60]
+        if not runs.empty
+        else pd.Series(dtype="datetime64[ns, UTC]")
+    )
+    days_since_quality = (
+        999 if len(quality_days) == 0 else int((today - quality_days.max()).days)
+    )
+    days_since_long = (
+        999 if len(long_days) == 0 else int((today - long_days.max()).days)
+    )
+    if tsb < -10 or days_since_run < 1:
+        return "REST"
+    if days_since_quality >= quality_gap_days and tsb > -5 and days_since_run >= 2:
+        return "QUALITY"
+    if days_since_long >= long_gap_days and days_since_run >= 1:
+        return "LONG"
+    return "EASY"
+
+
+today_type = decide_today(daily, runs, activities)
+print("today_type =", today_type)
+
+# test
+print("TSB:", daily["tsb"].iloc[-1])
+print(
+    "days_since_last_run:",
+    (
+        pd.Timestamp.now("UTC").floor("D")
+        - pd.to_datetime(runs["start_time"]).dt.floor("D").max()
+    ).days,
+)
+print("decision:", today_type)
+
+
 def allocate_sessions(
     target_km: float,
     runs: int,
