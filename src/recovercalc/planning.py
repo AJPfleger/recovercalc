@@ -7,7 +7,7 @@ from .metrics import (
     recent_pace_min_per_km,
 )
 
-from .decision import decide_today, next_week_targets
+from .decision import decide_today, next_week_targets, forecast_next_training_day
 
 from .builders import (
     HR_ZONES,
@@ -73,6 +73,10 @@ def run_today():
 
     if today_type == "REST":
         print(f"REST day: TSB={daily['tsb'].iloc[-1]:.1f}, no workout exported.")
+        days, next_type, next_tsb = forecast_next_training_day(daily, runs, activities)
+        print(
+            f"REST today. Next training in {days} day(s): {next_type} (predicted TSB={next_tsb:.1f})"
+        )
         raise SystemExit(0)
     elif today_type == "EASY":
         target_km = max(3.2, targets["target_km"] / max(targets["runs"], 1))

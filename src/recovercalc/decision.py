@@ -105,3 +105,27 @@ def next_week_targets(
         "target_trimp": float(trimp_target),
         "runs": runs,
     }
+
+
+def forecast_next_training_day(
+    daily, runs, activities, max_days=14, ctl_tau=42.0, atl_tau=7.0
+):
+    sim = daily.copy()
+    last = sim.iloc[-1].copy()
+    for d in range(1, max_days + 1):
+        last["ctl"] = last["ctl"] + (0.0 - last["ctl"]) / ctl_tau
+        last["atl"] = last["atl"] + (0.0 - last["atl"]) / atl_tau
+        last["tsb"] = last["ctl"] - last["atl"]
+        sim.loc[sim.index[-1] + pd.Timedelta(days=d)] = {
+            "trimp": 0.0,
+            "ctl": last["ctl"],
+            "atl": last["atl"],
+            "tsb": last["tsb"],
+        }
+        if decide_today(sim, runs, activities, today=sim.index[-1]) != "REST":
+            return (
+                d,
+                decide_today(sim, runs, activities, today=sim.index[-1]),
+                float(last["tsb"]),
+            )
+    return None, "REST", float(last["tsb"])
