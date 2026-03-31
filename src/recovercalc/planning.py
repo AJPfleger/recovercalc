@@ -82,13 +82,14 @@ def run_today(history_days: int = 365):
     print(targets)
 
     pace = recent_pace_min_per_km(runs)
-
+    print(daily.tail(15)[["trimp", "ctl", "atl", "tsb"]])
     if today_type == "REST":
         print(f"REST day: TSB={daily['tsb'].iloc[-1]:.1f}, no workout exported.")
         days, next_type, next_tsb = forecast_next_training_day(daily, runs, activities)
         print(
             f"REST today. Next training in {days} day(s): {next_type} (predicted TSB={next_tsb:.1f})"
         )
+        plot_training_overview(daily, weekly)
         raise SystemExit(0)
     elif today_type == "EASY":
         target_km = max(3.2, targets["target_km"] / max(targets["runs"], 1))

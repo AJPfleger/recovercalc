@@ -20,6 +20,20 @@ def _trimp_from_samples(hr: np.ndarray, dt_s: np.ndarray) -> float:
     return float(np.sum((dt_s / 60.0) * hrr * y))
 
 
+def extend_daily_to_today(daily: pd.DataFrame, today=None, ctl_tau=42.0, atl_tau=7.0):
+    today = pd.Timestamp.now("UTC").floor("D") if today is None else pd.Timestamp(today)
+    out = daily.copy()
+    last_day = out.index.max().floor("D")
+    while last_day < today:
+        next_day = last_day + pd.Timedelta(days=1)
+        prev = out.iloc[-1]
+        ctl = prev["ctl"] + (0.0 - prev["ctl"]) / ctl_tau
+        atl = prev["atl"] + (0.0 - prev["atl"]) / atl_tau
+        out.loc[next_day] = {"trimp": 0.0, "ctl": ctl, "atl": atl, "tsb": ctl - atl}
+        last_day = next_day.floor("D")
+    return out
+
+
 def add_ctl_atl(activities: pd.DataFrame, ctl_tau: float = 42.0, atl_tau: float = 7.0):
     df = activities.copy()
     df["date"] = pd.to_datetime(df["start_time"], utc=True).dt.floor("D")
@@ -38,7 +52,7 @@ def add_ctl_atl(activities: pd.DataFrame, ctl_tau: float = 42.0, atl_tau: float 
         atl[i] = atl[i - 1] + (daily["trimp"].iloc[i] - atl[i - 1]) / atl_tau
     daily["ctl"], daily["atl"], daily["tsb"] = ctl, atl, ctl - atl
 
-    return daily
+    return extend_daily_to_today(daily)
 
 
 def add_progression_metrics(daily: pd.DataFrame, weekly: pd.DataFrame):

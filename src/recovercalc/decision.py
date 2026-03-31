@@ -27,7 +27,8 @@ def decide_today(
         .dt.floor("D")
     )
     last_run_day = run_days.max() if not runs.empty else None
-    tsb = float(daily.loc[daily.index <= today, "tsb"].iloc[-1])
+    tsb_series = daily["tsb"].shift(1)
+    tsb_today = float(tsb_series.loc[tsb_series.index <= today].iloc[-1])
     days_since_run = 999 if pd.isna(last_run_day) else int((today - last_run_day).days)
     run_dur = (
         runs.groupby(run_days)["duration_s"].sum()
@@ -50,17 +51,17 @@ def decide_today(
     days_since_long = (
         999 if len(long_days) == 0 else int((today - long_days.max()).days)
     )
-    if tsb < EASY_OK_THRESHOLD or days_since_run < 1:
+    if tsb_today < EASY_OK_THRESHOLD or days_since_run < 1:
         return "REST"
     if (
         days_since_quality >= quality_gap_days
-        and tsb > QUALITY_OK_THRESHOLD
+        and tsb_today > QUALITY_OK_THRESHOLD
         and days_since_run >= 2
     ):
         return "QUALITY"
     if (
         days_since_long >= long_gap_days
-        and tsb > LONG_OK_THRESHOLD
+        and tsb_today > LONG_OK_THRESHOLD
         and days_since_run >= 1
     ):
         return "LONG"
