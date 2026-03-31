@@ -23,6 +23,8 @@ def run_today():
 
     from .io_fit import load_history, export_workout_from_template_like_structure
 
+    from .plots import plot_load, plot_progression
+
     from pathlib import Path
     from dataclasses import dataclass, asdict
     import math
@@ -30,12 +32,6 @@ def run_today():
     import numpy as np
     import fitdecode
 
-    REST_HR, MAX_HR = 45, 190  # adjust
-    HISTORY_DAYS = 365  # or None
-    MIN_SESSION_MIN = 20.0
-    MIN_SESSION_KM = 3.2
-    MIN_LONG_KM = 6.0
-    MIN_QUALITY_KM = 4.0
     LOCAL_TZ = "Europe/Paris"
 
     @dataclass
@@ -54,40 +50,6 @@ def run_today():
         z3: float
         z4: float
         z5: float
-
-    def plot_load(daily: pd.DataFrame):
-        import matplotlib.pyplot as plt
-
-        ax = daily[["trimp", "ctl", "atl", "tsb"]].plot(
-            figsize=(10, 5), secondary_y=["tsb"]
-        )
-        ax.set_ylabel("TRIMP / load")
-        ax.right_ax.set_ylabel("TSB")
-        plt.tight_layout()
-        plt.show()
-
-    def plot_progression(daily: pd.DataFrame, weekly: pd.DataFrame):
-        import matplotlib.pyplot as plt
-
-        plt.figure(figsize=(10, 5))
-        plt.plot(daily.index, daily["ctl_ramp_7"], label="ctl_ramp_7")
-        plt.plot(daily.index, daily["ctl_ramp_28"], label="ctl_ramp_28")
-        plt.axhline(0.0, linewidth=1)
-        plt.ylabel("CTL ramp")
-        plt.legend()
-        plt.tight_layout()
-        plt.show()
-
-        if "distance_km" in weekly.columns and "dist_ramp" in weekly.columns:
-            plt.figure(figsize=(10, 5))
-            plt.plot(
-                pd.to_datetime(weekly["week"]), weekly["distance_km"], label="distance_km"
-            )
-            plt.plot(pd.to_datetime(weekly["week"]), weekly["dist_ramp"], label="dist_ramp")
-            plt.axhline(0.0, linewidth=1)
-            plt.legend()
-            plt.tight_layout()
-            plt.show()
 
     # usage
     activities, runs, weekly = load_history("data", history_days=365)
