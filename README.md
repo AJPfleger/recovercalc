@@ -15,7 +15,8 @@
 Download your last weeks (or all) training activities and store them in `data`.
 
 ```bash
-python main.py
+pip install -e .
+python -m recovercalc.cli
 ```
 You will get some nice graphs and a fit file that should be compatible with GARMIN watches.
 Connect your watch with your computer and put the generated file into `NewFiles`.
