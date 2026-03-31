@@ -8,7 +8,7 @@ def run_today():
         recent_pace_min_per_km,
     )
 
-    from .decision import decide_today
+    from .decision import decide_today, next_week_targets
 
     from .builders import (
         HR_ZONES,
@@ -113,45 +113,6 @@ def run_today():
     )
     print(weekly[["week", "distance_km", "trimp", "dist_ramp", "trimp_ramp"]].tail(10))
 
-    def next_week_targets(
-        daily: pd.DataFrame,
-        weekly: pd.DataFrame,
-        max_weekly_km: float = 25.0,
-        min_runs: int = 3,
-        max_runs: int = 5,
-    ):
-        w = weekly.copy().sort_values("week")
-        last = w.iloc[-1]
-        recent_km = float(w["distance_km"].tail(min(4, len(w))).mean())
-        recent_trimp = float(w["trimp"].tail(min(4, len(w))).mean())
-
-        ctl = float(daily["ctl"].iloc[-1])
-        tsb = float(daily["tsb"].iloc[-1])
-
-        if tsb < -10:
-            km_target = recent_km * 0.90
-            trimp_target = recent_trimp * 0.90
-        elif tsb > 5:
-            km_target = recent_km * 1.08
-            trimp_target = recent_trimp * 1.08
-        else:
-            km_target = recent_km * 1.04
-            trimp_target = recent_trimp * 1.04
-
-        ctl_target = ctl * 7.0
-        km_target = min(km_target, float(last["distance_km"]) + 2.5, max_weekly_km)
-        trimp_target = min(trimp_target, float(last["trimp"]) * 1.08, ctl_target * 1.10)
-
-        runs = int(
-            np.clip(round(float(w["runs"].tail(min(4, len(w))).mean())), min_runs, max_runs)
-        )
-
-        return {
-            "target_km": float(km_target),
-            "target_trimp": float(trimp_target),
-            "runs": runs,
-        }
-
     today_type = decide_today(daily, runs, activities)
     print("today_type =", today_type)
 
@@ -169,12 +130,8 @@ def run_today():
     )
     print("decision:", today_type)
 
-    # test
     targets = next_week_targets(daily, weekly)
     print(targets)
-
-    # usage
-    targets = next_week_targets(daily, weekly)
     pace_km_per_min = recent_pace_km_per_min(runs)
     plan = allocate_sessions(targets["target_km"], targets["runs"], pace_km_per_min)
 
@@ -182,43 +139,6 @@ def run_today():
     print({"pace_km_per_min": pace_km_per_min})
     print(plan)
     print("sum_km =", round(sum(s["km"] for s in plan["sessions"]), 2))
-
-    def build_quality_session(target_km: float, state: str = "normal"):
-        if target_km < 5.0:
-            return {
-                "kind": "easy",
-                "steps": [
-                    {"type": "warmup", "min": 10},
-                    {"type": "easy", "min": 20},
-                    {"type": "cooldown", "min": 5},
-                ],
-            }
-        if state == "fatigued":
-            return {
-                "kind": "tempo",
-                "steps": [
-                    {"type": "warmup", "min": 10},
-                    {"type": "steady", "repeats": 2, "on_min": 6, "off_min": 3},
-                    {"type": "cooldown", "min": 10},
-                ],
-            }
-        if target_km < 6.5:
-            return {
-                "kind": "interval",
-                "steps": [
-                    {"type": "warmup", "min": 10},
-                    {"type": "interval", "repeats": 6, "on_min": 2, "off_min": 2},
-                    {"type": "cooldown", "min": 10},
-                ],
-            }
-        return {
-            "kind": "tempo",
-            "steps": [
-                {"type": "warmup", "min": 12},
-                {"type": "steady", "repeats": 3, "on_min": 6, "off_min": 3},
-                {"type": "cooldown", "min": 10},
-            ],
-        }
 
     def recent_pace_min_per_km(runs: pd.DataFrame, lookback: int = 10):
         x = runs.sort_values("start_time").tail(lookback)
@@ -245,7 +165,6 @@ def run_today():
     )
 
     pace = 1.0 / recent_pace_km_per_min(runs)
-    targets = next_week_targets(daily, weekly)
 
     if today_type == "REST":
         print(f"REST day: TSB={daily['tsb'].iloc[-1]:.1f}, no workout exported.")
