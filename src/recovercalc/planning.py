@@ -26,8 +26,18 @@ import pandas as pd
 LOCAL_TZ = "Europe/Paris"
 
 
-def run_today():
-    activities, runs, weekly = load_history("data", history_days=365)
+def run_today(history_days: int = 365):
+    activities, runs, weekly = load_history("data", history_days=history_days)
+
+    if activities.empty:
+        print("ERROR: no activities found → cannot compute training")
+        raise SystemExit(1)
+
+    span = (activities["start_time"].max() - activities["start_time"].min()).days
+
+    if span < 42:
+        print("WARNING: <42 days activity history → CTL unstable")
+
     daily = add_ctl_atl(activities)
     daily, weekly = add_progression_metrics(daily, weekly)
 
