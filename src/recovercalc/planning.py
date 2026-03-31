@@ -25,31 +25,9 @@ def run_today():
 
     from .plots import plot_load, plot_progression
 
-    from pathlib import Path
-    from dataclasses import dataclass, asdict
-    import math
     import pandas as pd
-    import numpy as np
-    import fitdecode
 
     LOCAL_TZ = "Europe/Paris"
-
-    @dataclass
-    class RunSummary:
-        file: str
-        start_time: pd.Timestamp | None
-        duration_s: float
-        distance_m: float
-        avg_hr: float | None
-        gain_m: float
-        avg_pace_s_per_km: float | None
-        trimp: float
-        week: str
-        z1: float
-        z2: float
-        z3: float
-        z4: float
-        z5: float
 
     # usage
     activities, runs, weekly = load_history("data", history_days=365)
@@ -93,12 +71,10 @@ def run_today():
     print("decision:", today_type)
 
     targets = next_week_targets(daily, weekly)
-    print(targets)
     pace_km_per_min = recent_pace_km_per_min(runs)
     plan = allocate_sessions(targets["target_km"], targets["runs"], pace_km_per_min)
 
     print(targets)
-    print({"pace_km_per_min": pace_km_per_min})
     print(plan)
     print("sum_km =", round(sum(s["km"] for s in plan["sessions"]), 2))
 
@@ -115,18 +91,6 @@ def run_today():
     pace = recent_pace_min_per_km(runs)
     week = schedule_week(plan, pace, daily["state"].iloc[-1], preferred_days)
     print_week(week)
-
-    from fit_tool.fit_file_builder import FitFileBuilder
-    from fit_tool.profile.messages.workout_message import WorkoutMessage
-    from fit_tool.profile.messages.workout_step_message import WorkoutStepMessage
-
-    from fit_tool.profile.profile_type import (
-        WorkoutStepDuration,
-        WorkoutStepTarget,
-        Intensity,
-    )
-
-    pace = 1.0 / recent_pace_km_per_min(runs)
 
     if today_type == "REST":
         print(f"REST day: TSB={daily['tsb'].iloc[-1]:.1f}, no workout exported.")
