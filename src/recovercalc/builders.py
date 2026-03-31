@@ -1,12 +1,10 @@
-from .config import MIN_SESSION_MIN, MIN_SESSION_KM, MIN_LONG_KM, MIN_QUALITY_KM
-
-HR_ZONES = {
-    "Z1": (0.50, 0.60),
-    "Z2": (0.60, 0.70),
-    "Z3": (0.70, 0.80),
-    "Z4": (0.80, 0.90),
-    "Z5": (0.90, 1.00),
-}
+from .config import (
+    MIN_SESSION_MIN,
+    MIN_SESSION_KM,
+    MIN_LONG_KM,
+    MIN_QUALITY_KM,
+    HR_ZONES,
+)
 
 
 def hr_target(zone: str):

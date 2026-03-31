@@ -13,3 +13,11 @@ LONG_OK_THRESHOLD = -10
 QUALITY_OK_THRESHOLD = -5
 
 LOCAL_TZ = "Europe/Paris"
+
+HR_ZONES = {
+    "Z1": (0.62, 0.70),
+    "Z2": (0.70, 0.77),
+    "Z3": (0.77, 0.85),
+    "Z4": (0.85, 0.93),
+    "Z5": (0.93, 1.00),
+}

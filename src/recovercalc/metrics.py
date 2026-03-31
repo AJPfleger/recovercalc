@@ -1,15 +1,24 @@
 import numpy as np
 import pandas as pd
-from .config import REST_HR, MAX_HR
+from .config import REST_HR, MAX_HR, HR_ZONES
 
 
 def _hr_zone_frac(hr: np.ndarray) -> dict[str, float]:
     if hr.size == 0:
-        return {f"z{i}": 0.0 for i in range(1, 6)}
-    hrr = (hr - REST_HR) / (MAX_HR - REST_HR)
-    bins = [0.60, 0.70, 0.80, 0.90]
-    idx = np.digitize(hrr, bins, right=False)
-    return {f"z{i+1}": float((idx == i).mean()) for i in range(5)}
+        return {z.lower(): 0.0 for z in HR_ZONES}
+
+    hrr = np.clip((hr - REST_HR) / (MAX_HR - REST_HR), 0.0, 1.5)
+
+    zones = {}
+    items = list(HR_ZONES.items())
+    for i, (name, (lo, hi)) in enumerate(items):
+        if i == len(items) - 1:
+            mask = (hrr >= lo) & (hrr <= hi)
+        else:
+            mask = (hrr >= lo) & (hrr < hi)
+        zones[name.lower()] = float(mask.mean())
+
+    return zones
 
 
 def _trimp_from_samples(hr: np.ndarray, dt_s: np.ndarray) -> float:
