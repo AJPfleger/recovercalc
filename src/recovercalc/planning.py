@@ -1,35 +1,32 @@
+from .metrics import (
+    _hr_zone_frac,
+    _trimp_from_samples,
+    add_ctl_atl,
+    add_progression_metrics,
+    recent_pace_km_per_min,
+    recent_pace_min_per_km,
+)
+
+from .decision import decide_today, next_week_targets
+
+from .builders import (
+    HR_ZONES,
+    hr_target,
+    build_easy_session,
+    build_long_session,
+    build_quality_session,
+)
+
+from .io_fit import load_history, export_workout_from_template_like_structure
+
+from .plots import plot_load, plot_progression
+
+import pandas as pd
+
+LOCAL_TZ = "Europe/Paris"
+
+
 def run_today():
-    from .metrics import (
-        _hr_zone_frac,
-        _trimp_from_samples,
-        add_ctl_atl,
-        add_progression_metrics,
-        recent_pace_km_per_min,
-        recent_pace_min_per_km,
-    )
-
-    from .decision import decide_today, next_week_targets
-
-    from .builders import (
-        HR_ZONES,
-        hr_target,
-        build_easy_session,
-        build_long_session,
-        build_quality_session,
-        allocate_sessions,
-        schedule_week,
-        print_week,
-    )
-
-    from .io_fit import load_history, export_workout_from_template_like_structure
-
-    from .plots import plot_load, plot_progression
-
-    import pandas as pd
-
-    LOCAL_TZ = "Europe/Paris"
-
-    # usage
     activities, runs, weekly = load_history("data", history_days=365)
     daily = add_ctl_atl(activities)
     daily, weekly = add_progression_metrics(daily, weekly)
@@ -56,7 +53,6 @@ def run_today():
     today_type = decide_today(daily, runs, activities)
     print("today_type =", today_type)
 
-    # test
     print("TSB:", daily["tsb"].iloc[-1])
     print(
         "days_since_last_run:",
@@ -71,17 +67,9 @@ def run_today():
     print("decision:", today_type)
 
     targets = next_week_targets(daily, weekly)
-    pace_km_per_min = recent_pace_km_per_min(runs)
-    plan = allocate_sessions(targets["target_km"], targets["runs"], pace_km_per_min)
-
     print(targets)
-    print(plan)
-    print("sum_km =", round(sum(s["km"] for s in plan["sessions"]), 2))
 
-    preferred_days = ["Mon", "Wed", "Fri"]  # change weekly
     pace = recent_pace_min_per_km(runs)
-    week = schedule_week(plan, pace, daily["state"].iloc[-1], preferred_days)
-    print_week(week)
 
     if today_type == "REST":
         print(f"REST day: TSB={daily['tsb'].iloc[-1]:.1f}, no workout exported.")
@@ -105,7 +93,6 @@ def run_today():
 
     print(f"today_type={today_type}, workout_name={workout_name}")
     print(workout)
-    print_week({"Today": workout})
 
     export_workout_from_template_like_structure(
         workout=workout,
