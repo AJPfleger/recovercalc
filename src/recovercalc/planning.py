@@ -78,15 +78,6 @@ def run_today():
     print(plan)
     print("sum_km =", round(sum(s["km"] for s in plan["sessions"]), 2))
 
-    def recent_pace_min_per_km(runs: pd.DataFrame, lookback: int = 10):
-        x = runs.sort_values("start_time").tail(lookback)
-        x = x[(x["distance_m"] > 0) & (x["duration_s"] > 0)]
-        if x.empty:
-            return 6.0
-        km = x["distance_m"].sum() / 1000.0
-        minutes = x["duration_s"].sum() / 60.0
-        return float(minutes / km)
-
     preferred_days = ["Mon", "Wed", "Fri"]  # change weekly
     pace = recent_pace_min_per_km(runs)
     week = schedule_week(plan, pace, daily["state"].iloc[-1], preferred_days)
