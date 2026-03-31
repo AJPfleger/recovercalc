@@ -6,11 +6,39 @@ from dataclasses import asdict
 from .metrics import _hr_zone_frac, _trimp_from_samples
 from .models import ActivitySummary
 
+CACHE_FILE = Path("activity_cache.parquet")
+
+
+def load_cache():
+    if CACHE_FILE.exists():
+        return pd.read_parquet(CACHE_FILE)
+    return pd.DataFrame()
+
+
+def save_cache(df):
+    df.to_parquet(CACHE_FILE, index=False)
+
 
 def load_history(dir_path: str | Path, history_days: int | None = None):
     now = pd.Timestamp.now("UTC")
+
+    cache = load_cache()
+    if not cache.empty and "mtime" not in cache.columns:
+        cache["mtime"] = np.nan
+
     rows = []
+
     for p in Path(dir_path).rglob("*.fit"):
+        p = Path(p)
+        mtime = p.stat().st_mtime
+
+        if not cache.empty:
+            hit = cache[(cache["file"] == str(p)) & (cache["mtime"] == mtime)]
+
+            if not hit.empty:
+                rows.append(hit.iloc[0].to_dict())
+                continue
+
         s = parse_activity_fit(p)
         if (
             s
@@ -20,8 +48,23 @@ def load_history(dir_path: str | Path, history_days: int | None = None):
                 or s.start_time >= now - pd.Timedelta(days=history_days)
             )
         ):
-            rows.append(asdict(s))
-    activities = pd.DataFrame(rows).sort_values("start_time").reset_index(drop=True)
+            d = asdict(s)
+            d["mtime"] = mtime
+            rows.append(d)
+
+    all_activities = pd.DataFrame(rows)
+    save_cache(all_activities)
+
+    if history_days is not None:
+        cutoff = now - pd.Timedelta(days=history_days)
+        activities = all_activities[
+            pd.to_datetime(all_activities["start_time"], utc=True) >= cutoff
+        ].copy()
+    else:
+        activities = all_activities.copy()
+
+    activities = activities.sort_values("start_time").reset_index(drop=True)
+
     runs = activities[activities["is_run"]].copy().reset_index(drop=True)
     weekly_runs = runs.groupby("week", as_index=False).agg(
         runs=("file", "count"),
