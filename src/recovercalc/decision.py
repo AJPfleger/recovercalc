@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 
-from .config import LOCAL_TZ
+from .config import LOCAL_TZ, EASY_OK_THRESHOLD, LONG_OK_THRESHOLD, QUALITY_OK_THRESHOLD
 
 
 def decide_today(
@@ -50,11 +50,19 @@ def decide_today(
     days_since_long = (
         999 if len(long_days) == 0 else int((today - long_days.max()).days)
     )
-    if tsb < -10 or days_since_run < 1:
+    if tsb < EASY_OK_THRESHOLD or days_since_run < 1:
         return "REST"
-    if days_since_quality >= quality_gap_days and tsb > -5 and days_since_run >= 2:
+    if (
+        days_since_quality >= quality_gap_days
+        and tsb > QUALITY_OK_THRESHOLD
+        and days_since_run >= 2
+    ):
         return "QUALITY"
-    if days_since_long >= long_gap_days and days_since_run >= 1:
+    if (
+        days_since_long >= long_gap_days
+        and tsb > LONG_OK_THRESHOLD
+        and days_since_run >= 1
+    ):
         return "LONG"
     return "EASY"
 
