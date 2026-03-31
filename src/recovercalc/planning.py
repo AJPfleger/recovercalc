@@ -1,4 +1,13 @@
 def run_today():
+    from .metrics import (
+        _hr_zone_frac,
+        _trimp_from_samples,
+        add_ctl_atl,
+        add_progression_metrics,
+        recent_pace_km_per_min,
+        recent_pace_min_per_km,
+    )
+
     from pathlib import Path
     from dataclasses import dataclass, asdict
     import math
@@ -13,7 +22,6 @@ def run_today():
     MIN_LONG_KM = 6.0
     MIN_QUALITY_KM = 4.0
     LOCAL_TZ = "Europe/Paris"
-
 
     @dataclass
     class RunSummary:
@@ -31,24 +39,6 @@ def run_today():
         z3: float
         z4: float
         z5: float
-
-
-    def _hr_zone_frac(hr: np.ndarray) -> dict[str, float]:
-        if hr.size == 0:
-            return {f"z{i}": 0.0 for i in range(1, 6)}
-        hrr = (hr - REST_HR) / (MAX_HR - REST_HR)
-        bins = [0.60, 0.70, 0.80, 0.90]
-        idx = np.digitize(hrr, bins, right=False)
-        return {f"z{i+1}": float((idx == i).mean()) for i in range(5)}
-
-
-    def _trimp_from_samples(hr: np.ndarray, dt_s: np.ndarray) -> float:
-        if hr.size == 0 or dt_s.size == 0:
-            return 0.0
-        hrr = np.clip((hr - REST_HR) / (MAX_HR - REST_HR), 0, 1.2)
-        y = 0.64 * np.exp(1.92 * hrr)  # Banister male; replace if needed
-        return float(np.sum((dt_s / 60.0) * hrr * y))
-
 
     # 1) parser: keep all sports, mark running separately
     @dataclass
@@ -70,7 +60,6 @@ def run_today():
         z3: float
         z4: float
         z5: float
-
 
     def parse_activity_fit(path: str | Path) -> ActivitySummary | None:
         recs, ses = [], {}
@@ -156,7 +145,6 @@ def run_today():
             **zones,
         )
 
-
     # 2) loader: return all activities + runs + run-weekly
     def load_history(dir_path: str | Path, history_days: int | None = None):
         now = pd.Timestamp.now("UTC")
@@ -189,27 +177,7 @@ def run_today():
         )
         return activities, runs, weekly_runs
 
-
     # 3) fatigue from all activities, planning from runs
-    def add_ctl_atl(activities: pd.DataFrame, ctl_tau: float = 42.0, atl_tau: float = 7.0):
-        df = activities.copy()
-        df["date"] = pd.to_datetime(df["start_time"], utc=True).dt.floor("D")
-        daily = df.groupby("date").agg(trimp=("trimp", "sum"))
-        idx = pd.date_range(daily.index.min(), daily.index.max(), freq="D", tz="UTC")
-        daily = daily.reindex(idx, fill_value=0.0)
-        ctl = np.zeros(len(daily))
-        atl = np.zeros(len(daily))
-        init = (
-            daily["trimp"].iloc[:42].mean() if len(daily) >= 42 else daily["trimp"].mean()
-        )
-        ctl[0] = init
-        atl[0] = init
-        for i in range(1, len(daily)):
-            ctl[i] = ctl[i - 1] + (daily["trimp"].iloc[i] - ctl[i - 1]) / ctl_tau
-            atl[i] = atl[i - 1] + (daily["trimp"].iloc[i] - atl[i - 1]) / atl_tau
-        daily["ctl"], daily["atl"], daily["tsb"] = ctl, atl, ctl - atl
-        return daily
-
 
     def plot_load(daily: pd.DataFrame):
         import matplotlib.pyplot as plt
@@ -221,37 +189,6 @@ def run_today():
         ax.right_ax.set_ylabel("TSB")
         plt.tight_layout()
         plt.show()
-
-
-    def add_progression_metrics(daily: pd.DataFrame, weekly: pd.DataFrame):
-        daily = daily.copy()
-        weekly = weekly.copy()
-
-        daily["ctl_ramp_7"] = daily["ctl"].diff(7) / 7.0
-        daily["ctl_ramp_28"] = daily["ctl"].diff(28) / 28.0
-        daily["fatigue_flag"] = daily["tsb"] < -10.0
-        daily["fresh_flag"] = daily["tsb"] > 5.0
-
-        def classify_state(tsb: float) -> str:
-            if pd.isna(tsb):
-                return "unknown"
-            if tsb > 5.0:
-                return "fresh"
-            if tsb < -10.0:
-                return "fatigued"
-            return "normal"
-
-        daily["state"] = daily["tsb"].apply(classify_state)
-
-        if "distance_km" in weekly.columns:
-            weekly["dist_ramp"] = weekly["distance_km"].pct_change()
-            weekly["dist_change_km"] = weekly["distance_km"].diff()
-        if "trimp" in weekly.columns:
-            weekly["trimp_ramp"] = weekly["trimp"].pct_change()
-            weekly["trimp_change"] = weekly["trimp"].diff()
-
-        return daily, weekly
-
 
     def plot_progression(daily: pd.DataFrame, weekly: pd.DataFrame):
         import matplotlib.pyplot as plt
@@ -276,7 +213,6 @@ def run_today():
             plt.tight_layout()
             plt.show()
 
-
     # usage
     activities, runs, weekly = load_history("data", history_days=365)
     daily = add_ctl_atl(activities)
@@ -300,15 +236,6 @@ def run_today():
         ].tail(10)
     )
     print(weekly[["week", "distance_km", "trimp", "dist_ramp", "trimp_ramp"]].tail(10))
-
-
-    def recent_pace_km_per_min(runs: pd.DataFrame, lookback: int = 10) -> float:
-        x = runs.sort_values("start_time").tail(lookback).copy()
-        x = x[(x["distance_m"] > 0) & (x["duration_s"] > 0)]
-        if x.empty:
-            return 0.10  # 6:00 min/km fallback
-        return float((x["distance_m"].sum() / 1000.0) / (x["duration_s"].sum() / 60.0))
-
 
     def next_week_targets(
         daily: pd.DataFrame,
@@ -348,7 +275,6 @@ def run_today():
             "target_trimp": float(trimp_target),
             "runs": runs,
         }
-
 
     def decide_today(
         daily: pd.DataFrame,
@@ -404,7 +330,6 @@ def run_today():
             return "LONG"
         return "EASY"
 
-
     today_type = decide_today(daily, runs, activities)
     print("today_type =", today_type)
 
@@ -421,7 +346,6 @@ def run_today():
         ).days,
     )
     print("decision:", today_type)
-
 
     def allocate_sessions(
         target_km: float,
@@ -494,11 +418,12 @@ def run_today():
             sessions = [{"kind": "easy", "km": float(base)} for _ in range(runs)]
 
         return {
-            "type": "mixed" if any(s["kind"] != "easy" for s in sessions) else "easy_only",
+            "type": (
+                "mixed" if any(s["kind"] != "easy" for s in sessions) else "easy_only"
+            ),
             "runs": len(sessions),
             "sessions": sessions,
         }
-
 
     # test
     targets = next_week_targets(daily, weekly)
@@ -513,7 +438,6 @@ def run_today():
     print({"pace_km_per_min": pace_km_per_min})
     print(plan)
     print("sum_km =", round(sum(s["km"] for s in plan["sessions"]), 2))
-
 
     def build_quality_session(target_km: float, state: str = "normal"):
         if target_km < 5.0:
@@ -552,7 +476,6 @@ def run_today():
             ],
         }
 
-
     def recent_pace_min_per_km(runs: pd.DataFrame, lookback: int = 10):
         x = runs.sort_values("start_time").tail(lookback)
         x = x[(x["distance_m"] > 0) & (x["duration_s"] > 0)]
@@ -561,7 +484,6 @@ def run_today():
         km = x["distance_m"].sum() / 1000.0
         minutes = x["duration_s"].sum() / 60.0
         return float(minutes / km)
-
 
     HR_ZONES = {
         "Z1": (0.50, 0.60),
@@ -592,7 +514,6 @@ def run_today():
             ],
         }
 
-
     def build_long_session(target_km: float, pace_min_per_km: float):
         run_km = max(5.0, target_km - 4.0 / pace_min_per_km)  # subtract 2' WU + 2' CD
         return {
@@ -603,7 +524,6 @@ def run_today():
                 {"type": "cooldown", "min": 2, "target_type": "heart_rate", "zone": "Z1"},
             ],
         }
-
 
     def build_quality_session(
         target_km: float, pace_min_per_km: float, state: str = "normal"
@@ -656,7 +576,6 @@ def run_today():
             ],
         }
 
-
     def schedule_week(
         plan: dict,
         pace_min_per_km: float,
@@ -699,7 +618,6 @@ def run_today():
             place("easy", lambda km: build_easy_session(km, pace_min_per_km), hard_days)
         return out
 
-
     def print_week(week: dict):
         for day in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]:
             w = week.get(day)
@@ -725,7 +643,6 @@ def run_today():
                         total_min += step["min"]
             print(f"  TOTAL: {total_min} min\n")
 
-
     preferred_days = ["Mon", "Wed", "Fri"]  # change weekly
     pace = recent_pace_min_per_km(runs)
     week = schedule_week(plan, pace, daily["state"].iloc[-1], preferred_days)
@@ -740,7 +657,6 @@ def run_today():
         WorkoutStepTarget,
         Intensity,
     )
-
 
     def export_easy(workout, filename):
 
@@ -758,7 +674,6 @@ def run_today():
             builder.add(s)
 
         builder.build().to_file(filename)
-
 
     def export_workout_from_template_like_structure(
         workout: dict,
@@ -874,7 +789,6 @@ def run_today():
             builder.add(s)
 
         builder.build().to_file(filename)
-
 
     pace = 1.0 / recent_pace_km_per_min(runs)
     targets = next_week_targets(daily, weekly)
