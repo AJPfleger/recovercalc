@@ -19,7 +19,7 @@ from .builders import (
 
 from .io_fit import load_history, export_workout_from_template_like_structure
 
-from .plots import plot_load, plot_progression
+from .plots import plot_load, plot_progression, plot_training_overview
 
 import pandas as pd
 
@@ -27,7 +27,9 @@ LOCAL_TZ = "Europe/Paris"
 
 
 def run_today(history_days: int = 365):
-    activities, runs, weekly = load_history("data", history_days=history_days)
+    activities, runs, weekly = load_history(
+        "data/activity_fits", history_days=history_days
+    )
 
     if activities.empty:
         print("ERROR: no activities found → cannot compute training")
@@ -113,4 +115,7 @@ def run_today(history_days: int = 365):
         filename="today.fit",
         workout_name="recovercalc " + workout_name,
     )
+
+    plot_training_overview(daily, weekly)
+
     pass
