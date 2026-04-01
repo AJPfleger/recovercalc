@@ -8,6 +8,9 @@ MIN_SESSION_KM = 3.2
 MIN_LONG_KM = 6.0
 MIN_QUALITY_KM = 4.0
 
+WARMUP_TIME = 2
+COOLDOWN_TIME = 2
+
 # readiness thresholds (morning TSB)
 EASY_TSB_MIN = -20.0
 LONG_TSB_MIN = -10.0

@@ -4,6 +4,8 @@ from .config import (
     MIN_LONG_KM,
     MIN_QUALITY_KM,
     HR_ZONES,
+    WARMUP_TIME,
+    COOLDOWN_TIME,
 )
 
 
@@ -18,19 +20,35 @@ def hr_target(zone: str):
 
 
 def build_easy_session(target_km: float, pace_min_per_km: float):
+    core_distance = (
+        max(MIN_SESSION_MIN / pace_min_per_km, target_km)
+        - (WARMUP_TIME + COOLDOWN_TIME) / pace_min_per_km
+    )
+
     return {
         "kind": "easy",
         "steps": [
-            {"type": "warmup", "min": 2, "target_type": "heart_rate", "zone": "Z1"},
+            {
+                "type": "warmup",
+                "min": WARMUP_TIME,
+                "target_type": "heart_rate",
+                "zone": "Z1",
+            },
             {
                 "type": "easy",
-                "km": max(16 / pace_min_per_km, target_km),
+                "km": core_distance / 2,
+                "target_type": "heart_rate",
+                "zone": "Z2",
+            },
+            {
+                "type": "easy",
+                "km": core_distance / 2,
                 "target_type": "heart_rate",
                 "zone": "Z2",
             },
             {
                 "type": "cooldown",
-                "min": 2,
+                "min": COOLDOWN_TIME,
                 "target_type": "heart_rate",
                 "zone": "Z1",
             },
@@ -39,20 +57,34 @@ def build_easy_session(target_km: float, pace_min_per_km: float):
 
 
 def build_long_session(target_km: float, pace_min_per_km: float):
-    run_km = max(5.0, target_km - 4.0 / pace_min_per_km)  # subtract 2' WU + 2' CD
+    core_distance = (
+        max(MIN_LONG_K, target_km) - (WARMUP_TIME + COOLDOWN_TIME) / pace_min_per_km
+    )
+
     return {
         "kind": "long",
         "steps": [
-            {"type": "warmup", "min": 2, "target_type": "heart_rate", "zone": "Z1"},
+            {
+                "type": "warmup",
+                "min": WARMUP_TIME,
+                "target_type": "heart_rate",
+                "zone": "Z1",
+            },
             {
                 "type": "easy",
-                "km": run_km,
+                "km": core_distance / 2,
+                "target_type": "heart_rate",
+                "zone": "Z2",
+            },
+            {
+                "type": "easy",
+                "km": core_distance / 2,
                 "target_type": "heart_rate",
                 "zone": "Z2",
             },
             {
                 "type": "cooldown",
-                "min": 2,
+                "min": COOLDOWN_TIME,
                 "target_type": "heart_rate",
                 "zone": "Z1",
             },
@@ -86,7 +118,12 @@ def build_quality_session(
     return {
         "kind": "quality",
         "steps": [
-            {"type": "warmup", "min": 2, "target_type": "heart_rate", "zone": "Z1"},
+            {
+                "type": "warmup",
+                "min": WARMUP_TIME,
+                "target_type": "heart_rate",
+                "zone": "Z1",
+            },
             {
                 "type": "easy",
                 "km": prep_km,
@@ -119,7 +156,7 @@ def build_quality_session(
             },
             {
                 "type": "cooldown",
-                "min": 2,
+                "min": COOLDOWN_TIME,
                 "target_type": "heart_rate",
                 "zone": "Z1",
             },
