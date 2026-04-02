@@ -22,10 +22,24 @@ from .config import (
 
 
 def _local_day(ts: pd.Series) -> pd.Series:
+    """Convert UTC timestamps to local calendar days.
+
+    Converts a Series of UTC timestamps into the configured local
+    timezone and normalises them to midnight (start of day).
+    Returns a Series of timezone-aware daily timestamps.
+    """
+
     return pd.to_datetime(ts, utc=True).dt.tz_convert(LOCAL_TZ).dt.floor("D")
 
 
 def _today_local(today: pd.Timestamp | None = None) -> pd.Timestamp:
+    """Return the current local calendar day.
+
+    If no timestamp is provided, uses the current UTC time.
+    Naive timestamps are assumed to be in the local timezone.
+    All results are converted and normalised to midnight.
+    """
+
     if today is None:
         return pd.Timestamp.now("UTC").tz_convert(LOCAL_TZ).floor("D")
 
@@ -37,6 +51,15 @@ def _today_local(today: pd.Timestamp | None = None) -> pd.Timestamp:
 
 
 def _classify_run(row: pd.Series) -> str:
+    """Classify a run by duration, load, and intensity distribution.
+
+    Labels a run as LONG when both duration and training load exceed the
+    long-run thresholds. Labels a run as QUALITY when training load is
+    sufficiently high and either the combined high-intensity share
+    (Z4+Z5) or threshold share (Z3) exceeds its threshold. Otherwise
+    returns EASY.
+    """
+
     duration_min = float(row.get("duration_s", 0.0)) / 60.0
     trimp = float(row.get("trimp", 0.0))
     z3 = float(row.get("z3", 0.0))
@@ -63,6 +86,15 @@ def decide_today(
     quality_gap_days: int = QUALITY_GAP_DAYS,
     long_gap_days: int = LONG_GAP_DAYS,
 ) -> str:
+    """Decide the recommended run type for the current day.
+
+    Uses recent fatigue, training load, recovery state, and spacing from
+    previous runs to choose between REST, EASY, QUALITY, and LONG.
+    Applies hard safety checks first, then enforces minimum recovery
+    gaps, and finally schedules quality or long work only when fitness
+    and spacing criteria are satisfied.
+    """
+
     today_local = _today_local(today)
 
     daily_local = daily.copy()
@@ -157,6 +189,16 @@ def next_week_targets(
     min_runs: int = 3,
     max_runs: int = 5,
 ):
+    """Compute training targets for the next week from recent load history.
+
+    Uses recent weekly distance and training load averages together with
+    current fitness (CTL) and fatigue balance (TSB) to scale targets.
+    Applies conservative reductions when fatigue is high and modest
+    progression when recovery is adequate. Targets are capped by recent
+    workload progression limits and maximum weekly distance. Run count
+    is derived from recent frequency and clipped to configured bounds.
+    """
+
     w = weekly.copy().sort_values("week")
     last = w.iloc[-1]
     recent_km = float(w["distance_km"].tail(min(4, len(w))).mean())

@@ -9,5 +9,5 @@ def main():
     run_today(history_days=args.history_days)
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     main()

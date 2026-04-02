@@ -95,12 +95,23 @@ def add_progression_metrics(daily: pd.DataFrame, weekly: pd.DataFrame):
 
 
 def recent_pace_km_per_min(runs: pd.DataFrame, lookback: int = 10) -> float:
+    """Compute recent average running pace in kilometres per minute.
+
+    Uses the most recent valid activities, filters invalid distance
+    or duration values, and computes the aggregate pace over the
+    selected window. Returns a conservative default if no valid data
+    is available.
+    """
+
     x = runs.sort_values("start_time").tail(lookback).copy()
     x = x[(x["distance_m"] > 0) & (x["duration_s"] > 0)]
     if x.empty:
         return 0.10  # 6:00 min/km fallback
+
     return float((x["distance_m"].sum() / 1000.0) / (x["duration_s"].sum() / 60.0))
 
 
 def recent_pace_min_per_km(runs: pd.DataFrame, lookback: int = 10) -> float:
+    """Compute recent average running pace in minutes per kilometre."""
+
     return 1.0 / recent_pace_km_per_min(runs, lookback)

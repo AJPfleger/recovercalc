@@ -15,3 +15,6 @@ where = ["src"]
 
 [project.scripts]
 recovercalc = "recovercalc.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
