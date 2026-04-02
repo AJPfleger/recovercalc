@@ -78,25 +78,9 @@ def _classify_run(row: pd.Series) -> str:
     return "EASY"
 
 
-def decide_today(
-    daily: pd.DataFrame,
-    runs: pd.DataFrame,
-    activities: pd.DataFrame,
-    today: pd.Timestamp | None = None,
-    quality_gap_days: int = QUALITY_GAP_DAYS,
-    long_gap_days: int = LONG_GAP_DAYS,
-) -> str:
-    """Decide the recommended run type for the current day.
-
-    Uses recent fatigue, training load, recovery state, and spacing from
-    previous runs to choose between REST, EASY, QUALITY, and LONG.
-    Applies hard safety checks first, then enforces minimum recovery
-    gaps, and finally schedules quality or long work only when fitness
-    and spacing criteria are satisfied.
-    """
-
-    today_local = _today_local(today)
-
+def _prepare_daily_state(
+    daily: pd.DataFrame, today_local: pd.Timestamp
+) -> dict[str, float]:
     daily_local = daily.copy()
     daily_local["local_day"] = daily_local.index.tz_convert(LOCAL_TZ).floor("D")
     daily_local = daily_local.set_index("local_day", drop=False)
@@ -109,25 +93,23 @@ def decide_today(
         trimp_series.loc[trimp_series.index < today_local].iloc[-1]
     )
 
-    # Previous day was too exhausting
-    if yesterday_trimp_all >= VERY_HIGH_LOAD_TRIMP:
-        return "REST"
+    return {
+        "tsb_today": tsb_today,
+        "yesterday_trimp_all": yesterday_trimp_all,
+    }
 
-    # Too fatigued even for an easy run
-    if tsb_today < EASY_TSB_MIN:
-        return "REST"
 
-    # Not fit enough for a not-easy run
-    if tsb_today < min(QUALITY_TSB_MIN, LONG_TSB_MIN):
-        return "EASY"
-
-    # No runs in the history at all, better start easy
+def _prepare_run_state(
+    runs: pd.DataFrame, today_local: pd.Timestamp
+) -> dict[str, object]:
     if runs.empty:
-        return "EASY"
-
-    # Yesterday was too hard for more than easy
-    if yesterday_trimp_all >= HIGH_LOAD_TRIMP:
-        return "EASY"
+        return {
+            "runs_empty": True,
+            "days_since_run": 999,
+            "days_since_long": 999,
+            "days_since_quality": 999,
+            "last_run_type": None,
+        }
 
     runs_local = runs.copy()
     runs_local["local_day"] = _local_day(runs_local["start_time"])
@@ -136,10 +118,6 @@ def decide_today(
     last_run = runs_local.iloc[-1]
     last_run_day = pd.Timestamp(last_run["local_day"])
     days_since_run = int((today_local - last_run_day).days)
-
-    # Usually prevents to have multiple runs on the same day
-    if days_since_run < MIN_DAYS_BETWEEN_RUNS:
-        return "REST"
 
     run_types = runs_local.apply(_classify_run, axis=1)
     long_days = runs_local.loc[run_types == "LONG", "local_day"]
@@ -155,28 +133,82 @@ def decide_today(
         if quality_days.empty
         else int((today_local - pd.Timestamp(quality_days.iloc[-1])).days)
     )
-    last_run_type = _classify_run(last_run)
 
-    if last_run_type == "LONG" and days_since_run < MIN_DAYS_AFTER_LONG:
+    return {
+        "runs_empty": False,
+        "days_since_run": days_since_run,
+        "days_since_long": days_since_long,
+        "days_since_quality": days_since_quality,
+        "last_run_type": _classify_run(last_run),
+    }
+
+
+def _rest_reason(daily_state: dict[str, float], run_state: dict[str, object]) -> bool:
+    """Return whether today must be REST based on hard safety rules."""
+
+    too_much_load = daily_state["yesterday_trimp_all"] >= VERY_HIGH_LOAD_TRIMP
+    too_fatigued = daily_state["tsb_today"] < EASY_TSB_MIN
+    too_soon = (
+        not run_state["runs_empty"]
+        and run_state["days_since_run"] < MIN_DAYS_BETWEEN_RUNS
+    )
+
+    return too_much_load or too_fatigued or too_soon
+
+
+def _easy_reason(daily_state: dict[str, float], run_state: dict[str, object]) -> bool:
+    """Return whether today should be EASY based on recovery and spacing rules."""
+
+    if _rest_reason(daily_state, run_state):
+        return False
+
+    too_fatigued_for_hard = daily_state["tsb_today"] < min(
+        QUALITY_TSB_MIN, LONG_TSB_MIN
+    )
+    no_run_history = run_state["runs_empty"]
+    high_load_yesterday = daily_state["yesterday_trimp_all"] >= HIGH_LOAD_TRIMP
+
+    wait_after_long = run_state["days_since_long"] < MIN_DAYS_AFTER_LONG
+    wait_after_quality = run_state["days_since_quality"] < MIN_DAYS_AFTER_QUALITY
+
+    return (
+        too_fatigued_for_hard
+        or no_run_history
+        or high_load_yesterday
+        or wait_after_long
+        or wait_after_quality
+    )
+
+
+def decide_today(
+    daily: pd.DataFrame,
+    runs: pd.DataFrame,
+    today: pd.Timestamp | None = None,
+    quality_gap_days: int = QUALITY_GAP_DAYS,
+    long_gap_days: int = LONG_GAP_DAYS,
+) -> str:
+    """Decide the recommended run type for the current day.
+
+    Uses recent fatigue, training load, recovery state, and spacing from
+    previous runs to choose between REST, EASY, QUALITY, and LONG.
+    Applies safety checks first, then enforces minimum recovery gaps,
+    and finally schedules quality or long work when criteria are met.
+    """
+    today_local = _today_local(today)
+
+    daily_state = _prepare_daily_state(daily, today_local)
+    run_state = _prepare_run_state(runs, today_local)
+
+    if _rest_reason(daily_state, run_state):
+        return "REST"
+
+    if _easy_reason(daily_state, run_state):
         return "EASY"
 
-    if last_run_type == "QUALITY" and days_since_run < MIN_DAYS_AFTER_QUALITY:
-        return "EASY"
-
-    if (
-        days_since_quality >= quality_gap_days
-        and tsb_today >= QUALITY_TSB_MIN
-        and days_since_run >= MIN_DAYS_AFTER_QUALITY
-        and days_since_long >= MIN_DAYS_AFTER_LONG
-    ):
+    if daily_state["tsb_today"] >= QUALITY_TSB_MIN:
         return "QUALITY"
 
-    if (
-        days_since_long >= long_gap_days
-        and tsb_today >= LONG_TSB_MIN
-        and days_since_run >= MIN_DAYS_AFTER_LONG
-        and days_since_quality >= MIN_DAYS_AFTER_QUALITY
-    ):
+    if daily_state["tsb_today"] >= LONG_TSB_MIN:
         return "LONG"
 
     return "EASY"
@@ -247,10 +279,10 @@ def forecast_next_training_day(
             "atl": last["atl"],
             "tsb": last["tsb"],
         }
-        if decide_today(sim, runs, activities, today=sim.index[-1]) != "REST":
+        if decide_today(sim, runs, today=sim.index[-1]) != "REST":
             return (
                 d,
-                decide_today(sim, runs, activities, today=sim.index[-1]),
+                decide_today(sim, runs, today=sim.index[-1]),
                 float(last["tsb"]),
             )
     return None, "REST", float(last["tsb"])

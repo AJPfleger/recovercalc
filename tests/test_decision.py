@@ -6,6 +6,8 @@ from recovercalc.decision import (
     _today_local,
     _classify_run,
     next_week_targets,
+    _rest_reason,
+    _easy_reason,
     decide_today,
 )
 
@@ -141,6 +143,119 @@ def test_next_week_targets_respects_max_weekly_km():
     assert out["target_km"] <= 25.0
 
 
+@pytest.mark.parametrize(
+    "daily_state, run_state, expected",
+    [
+        (
+            {"yesterday_trimp_all": 120.0, "tsb_today": 0.0},
+            {"runs_empty": False, "days_since_run": 5},
+            True,
+        ),
+        (
+            {"yesterday_trimp_all": 50.0, "tsb_today": -6.0},
+            {"runs_empty": False, "days_since_run": 5},
+            True,
+        ),
+        (
+            {"yesterday_trimp_all": 50.0, "tsb_today": 0.0},
+            {"runs_empty": False, "days_since_run": 1},
+            True,
+        ),
+        (
+            {"yesterday_trimp_all": 50.0, "tsb_today": 0.0},
+            {"runs_empty": False, "days_since_run": 3},
+            False,
+        ),
+        (
+            {"yesterday_trimp_all": 50.0, "tsb_today": 0.0},
+            {"runs_empty": True, "days_since_run": 0},
+            False,
+        ),
+    ],
+)
+def test_rest_reason(monkeypatch, daily_state, run_state, expected):
+    """Verify REST is triggered only by the defined hard safety rules."""
+    monkeypatch.setattr(decision, "VERY_HIGH_LOAD_TRIMP", 100.0)
+    monkeypatch.setattr(decision, "EASY_TSB_MIN", -5.0)
+    monkeypatch.setattr(decision, "MIN_DAYS_BETWEEN_RUNS", 2)
+    assert _rest_reason(daily_state, run_state) is expected
+
+
+@pytest.mark.parametrize(
+    "daily_state, run_state, expected",
+    [
+        (
+            {"tsb_today": -10.0, "yesterday_trimp_all": 0.0},
+            {
+                "runs_empty": False,
+                "days_since_run": 5,
+                "days_since_long": 5,
+                "days_since_quality": 5,
+            },
+            True,
+        ),
+        (
+            {"tsb_today": 10.0, "yesterday_trimp_all": 0.0},
+            {
+                "runs_empty": True,
+                "days_since_run": 0,
+                "days_since_long": 999,
+                "days_since_quality": 999,
+            },
+            True,
+        ),
+        (
+            {"tsb_today": 10.0, "yesterday_trimp_all": 9999.0},
+            {
+                "runs_empty": False,
+                "days_since_run": 5,
+                "days_since_long": 5,
+                "days_since_quality": 5,
+            },
+            False,
+        ),  # REST case handled earlier
+        (
+            {"tsb_today": 10.0, "yesterday_trimp_all": 0.0},
+            {
+                "runs_empty": False,
+                "days_since_run": 5,
+                "days_since_long": 1,
+                "days_since_quality": 5,
+            },
+            True,
+        ),
+        (
+            {"tsb_today": 10.0, "yesterday_trimp_all": 0.0},
+            {
+                "runs_empty": False,
+                "days_since_run": 5,
+                "days_since_long": 5,
+                "days_since_quality": 1,
+            },
+            True,
+        ),
+        (
+            {"tsb_today": 10.0, "yesterday_trimp_all": 0.0},
+            {
+                "runs_empty": False,
+                "days_since_run": 5,
+                "days_since_long": 5,
+                "days_since_quality": 5,
+            },
+            False,
+        ),
+    ],
+)
+def test_easy_reason(monkeypatch, daily_state, run_state, expected):
+    """Verify EASY is selected only when recovery or hard-session spacing rules require it."""
+    monkeypatch.setattr(decision, "QUALITY_TSB_MIN", 0.0)
+    monkeypatch.setattr(decision, "LONG_TSB_MIN", 0.0)
+    monkeypatch.setattr(decision, "HIGH_LOAD_TRIMP", 100.0)
+    monkeypatch.setattr(decision, "MIN_DAYS_AFTER_LONG", 2)
+    monkeypatch.setattr(decision, "MIN_DAYS_AFTER_QUALITY", 2)
+    assert _easy_reason(daily_state, run_state) is expected
+
+
 def test_decide_today_returns_rest_after_very_high_load_yesterday(monkeypatch):
     """Verify a very hard previous day forces REST immediately."""
     monkeypatch.setattr(decision, "VERY_HIGH_LOAD_TRIMP", 100.0)
@@ -148,11 +263,8 @@ def test_decide_today_returns_rest_after_very_high_load_yesterday(monkeypatch):
     idx = pd.to_datetime(["2024-03-01 00:00:00+00:00", "2024-03-02 00:00:00+00:00"])
     daily = pd.DataFrame({"tsb": [0.0, 0.0], "trimp": [50.0, 150.0]}, index=idx)
     runs = pd.DataFrame({"start_time": [pd.Timestamp("2024-03-01 06:00:00+00:00")]})
-    activities = pd.DataFrame()
 
-    out = decide_today(
-        daily, runs, activities, today=pd.Timestamp("2024-03-03 12:00:00+00:00")
-    )
+    out = decide_today(daily, runs, today=pd.Timestamp("2024-03-03 12:00:00+00:00"))
     assert out == "REST"
 
 
@@ -166,11 +278,8 @@ def test_decide_today_returns_easy_when_no_runs_exist(monkeypatch):
     idx = pd.to_datetime(["2024-03-01 00:00:00+00:00", "2024-03-02 00:00:00+00:00"])
     daily = pd.DataFrame({"tsb": [10.0, 10.0], "trimp": [10.0, 10.0]}, index=idx)
     runs = pd.DataFrame(columns=["start_time"])
-    activities = pd.DataFrame()
 
-    out = decide_today(
-        daily, runs, activities, today=pd.Timestamp("2024-03-03 12:00:00+00:00")
-    )
+    out = decide_today(daily, runs, today=pd.Timestamp("2024-03-03 12:00:00+00:00"))
     assert out == "EASY"
 
 
@@ -207,12 +316,10 @@ def test_decide_today_returns_quality_when_quality_conditions_are_met(monkeypatc
             },
         ]
     )
-    activities = pd.DataFrame()
 
     out = decide_today(
         daily,
         runs,
-        activities,
         today=pd.Timestamp("2024-03-03 12:00:00+00:00"),
         quality_gap_days=3,
         long_gap_days=99,
@@ -253,12 +360,10 @@ def test_decide_today_returns_long_when_long_conditions_are_met(monkeypatch):
             },
         ]
     )
-    activities = pd.DataFrame()
 
     out = decide_today(
         daily,
         runs,
-        activities,
         today=pd.Timestamp("2024-03-03 12:00:00+00:00"),
         quality_gap_days=99,
         long_gap_days=3,

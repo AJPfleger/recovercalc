@@ -58,7 +58,7 @@ def build_easy_session(target_km: float, pace_min_per_km: float):
 
 def build_long_session(target_km: float, pace_min_per_km: float):
     core_distance = (
-        max(MIN_LONG_K, target_km) - (WARMUP_TIME + COOLDOWN_TIME) / pace_min_per_km
+        max(MIN_LONG_KM, target_km) - (WARMUP_TIME + COOLDOWN_TIME) / pace_min_per_km
     )
 
     return {

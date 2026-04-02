@@ -62,7 +62,7 @@ def run_today(history_days: int = 365):
     )
     print(weekly[["week", "distance_km", "trimp", "dist_ramp", "trimp_ramp"]].tail(10))
 
-    today_type = decide_today(daily, runs, activities)
+    today_type = decide_today(daily, runs)
     print("today_type =", today_type)
 
     print("TSB:", daily["tsb"].iloc[-1])
