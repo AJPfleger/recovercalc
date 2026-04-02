@@ -162,3 +162,35 @@ def build_quality_session(
             },
         ],
     }
+
+
+def print_session(session: dict) -> None:
+    """Print a formatted textual representation of a training session.
+
+    Displays the session type and its ordered steps in a readable
+    tabular layout. Each step shows the activity type, duration or
+    distance, and the associated training target (for example heart
+    rate zone). Intended for terminal output.
+    """
+
+    kind = session.get("kind", "unknown").upper()
+    steps = session.get("steps", [])
+
+    print(f"\nTraining: {kind}")
+    print("-" * 40)
+
+    for i, step in enumerate(steps, 1):
+        t = step.get("type", "?").upper()
+        target = step.get("target_type", "")
+        zone = step.get("zone", "")
+
+        if "km" in step:
+            value = f"{step['km']:.2f} km"
+        elif "min" in step:
+            value = f"{step['min']} min"
+        else:
+            value = ""
+
+        print(f"{i:2d}. {t:<10} {value:<10} {target} {zone}")
+
+    print("-" * 40)
