@@ -173,16 +173,18 @@ def print_session(session: dict) -> None:
     rate zone). Intended for terminal output.
     """
 
-    kind = session.get("kind", "unknown").upper()
-    steps = session.get("steps", [])
-
-    print(f"\nTraining: {kind}")
-    print("-" * 40)
-
-    for i, step in enumerate(steps, 1):
-        t = step.get("type", "?").upper()
+    def _print_step(step: dict, idx: str = "", indent: int = 0) -> None:
+        prefix = " " * indent
+        step_type = step.get("type", "?").upper()
         target = step.get("target_type", "")
         zone = step.get("zone", "")
+
+        if step.get("type") == "repeat":
+            repeats = step.get("repeats", "?")
+            print(f"{prefix}{idx}REPEAT x{repeats}")
+            for j, substep in enumerate(step.get("steps", []), 1):
+                _print_step(substep, idx=f"{j}. ", indent=indent + 4)
+            return
 
         if "km" in step:
             value = f"{step['km']:.2f} km"
@@ -191,6 +193,13 @@ def print_session(session: dict) -> None:
         else:
             value = ""
 
-        print(f"{i:2d}. {t:<10} {value:<10} {target} {zone}")
+        print(f"{prefix}{idx}{step_type:<10} {value:<10} {target} {zone}".rstrip())
 
+    kind = session.get("kind", "unknown").upper()
+    steps = session.get("steps", [])
+
+    print(f"\nTraining: {kind}")
+    print("-" * 40)
+    for i, step in enumerate(steps, 1):
+        _print_step(step, idx=f"{i:2d}. ")
     print("-" * 40)

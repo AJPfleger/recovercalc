@@ -34,3 +34,41 @@ def test_print_training_handles_missing_fields(capsys):
     out = capsys.readouterr().out
     assert "Training: UNKNOWN" in out
     assert "1. EASY" in out
+
+
+def test_print_training_formats_repeat_blocks(capsys):
+    """Verify nested repeat blocks are expanded and indented in the output."""
+
+    session = {
+        "kind": "quality",
+        "steps": [
+            {"type": "warmup", "min": 2, "target_type": "heart_rate", "zone": "Z1"},
+            {
+                "type": "repeat",
+                "repeats": 2,
+                "steps": [
+                    {
+                        "type": "interval",
+                        "min": 2,
+                        "target_type": "heart_rate",
+                        "zone": "Z4",
+                    },
+                    {
+                        "type": "recovery",
+                        "min": 2,
+                        "target_type": "heart_rate",
+                        "zone": "Z1",
+                    },
+                ],
+            },
+        ],
+    }
+
+    print_session(session)
+    out = capsys.readouterr().out
+
+    assert "Training: QUALITY" in out
+    assert " 1. WARMUP" in out
+    assert " 2. REPEAT x2" in out
+    assert "    1. INTERVAL" in out
+    assert "    2. RECOVERY" in out
